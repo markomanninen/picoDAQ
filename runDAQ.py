@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # script runDAQ.py
 '''
-  **runDAQ** run Data Aquisition with Picoscpe 
+  **runDAQ** run Data Aquisition with Picoscpe
 
   Based on python drivers by Colin O'Flynn and Mark Harfouche,
   https://github.com/colinoflynn/pico-python
@@ -14,7 +14,7 @@
   tested with  PS2000a, PS3000a and PS4000
 
   Functions:
- 
+
     - set up PicoScope channel ranges and trigger
     - PicoScope configuration optionally from yaml file
     - acquire data (implemented as thread)
@@ -30,7 +30,7 @@
 
   graphics implemented with matplotlib
 
-  For Demo Mode: Connect output of signal generator to channel B, 
+  For Demo Mode: Connect output of signal generator to channel B,
   and an open cable to Channel A
 '''
 
@@ -59,17 +59,16 @@ from picodaqa.mpRMeter import mpRMeter
 # --------------------------------------------------------------
 
 
-# some helper functions 
+# some helper functions
 
 def stop_processes(proclst):
   '''
     Close Device at end of run
   '''
   for p in proclst: # stop all sub-processes
-    print('    terminating '+p.name)
+    print('    terminating ' + p.name)
     p.terminate()
   time.sleep(2)
-
 
 if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
@@ -79,47 +78,47 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   # read DAQ configuration file
   if len(sys.argv)==2:
     DAQconfFile = sys.argv[1]
-  else: 
+  else:
     DAQconfFile = 'DAQconfig.yaml'
   print('    DAQconfiguration from file ' + DAQconfFile)
   try:
     with open(DAQconfFile) as f:
-      DAQconfdict=yaml.load(f)
+      DAQconfdict = yaml.load(f, Loader = yaml.FullLoader)
   except:
     print('     failed to read DAQ configuration file ' + DAQconfFile)
     exit(1)
 
-  if "DeviceFile" in DAQconfdict: 
+  if "DeviceFile" in DAQconfdict:
     DeviceFile = DAQconfdict["DeviceFile"] # configuration file for scope
   else:
     print('     no device configuration file - exiting')
     exit(1)
 
-  if "BMfile" in DAQconfdict: 
-    BMfile = DAQconfdict["BMfile"] # Buffer Manager configuration file 
+  if "BMfile" in DAQconfdict:
+    BMfile = DAQconfdict["BMfile"] # Buffer Manager configuration file
   else:
     print('     no BM configuration file - exiting')
     exit(1)
 
-  if "ANAscript" in DAQconfdict: 
-    ANAscript = DAQconfdict["ANAscript"] # configuration file for user analysis 
+  if "ANAscript" in DAQconfdict:
+    ANAscript = DAQconfdict["ANAscript"] # configuration file for user analysis
   else:
     ANAscript = None
 
   if 'DAQmodules' in DAQconfdict:
     modules = DAQconfdict["DAQmodules"]
   else:
-    modules = [] 
-  if "verbose" in DAQconfdict: 
+    modules = []
+  if "verbose" in DAQconfdict:
     verbose = DAQconfdict["verbose"]
   else:
-    verbose = 1   # print (detailed) info if >0 
-    
+    verbose = 1   # print (detailed) info if >0
+
   # read scope configuration file
   print('    Device configuration from file ' + DeviceFile)
   try:
     with open(DeviceFile) as f:
-      PSconfdict=yaml.load(f)
+      PSconfdict = yaml.load(f, Loader = yaml.FullLoader)
   except:
     print('     failed to read scope configuration file ' + DeviceFile)
     exit(1)
@@ -127,7 +126,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   # read Buffer Manager configuration file
   try:
     with open(BMfile) as f:
-        BMconfdict=yaml.load(f)
+        BMconfdict = yaml.load(f, Loader = yaml.FullLoader)
   except:
    print('     failed to read BM input file ' + BMfile)
    exit(1)
@@ -136,7 +135,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   print(' -> initializing PicoScope')
 
 # configure and initialize PicoScope
-  PSconf=picodaqa.picoConfig.PSconfig(PSconfdict)
+  PSconf = picodaqa.picoConfig.PSconfig(PSconfdict)
   PSconf.init()
   # copy some of the important configuration variables
   NChannels = PSconf.NChannels # number of channels in use
@@ -151,14 +150,14 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
 # ... and start data acquisition thread.
   if verbose:
-    print(" -> starting Buffer Manager Threads")   
-  BM.start() # set up buffer manager processes  
+    print(" -> starting Buffer Manager Threads")
+  BM.start() # set up buffer manager processes
 
   if 'DAQmodules' in BMconfdict:
     modules = modules + BMconfdict["DAQmodules"]
-                       
+
 # list of modules (= backgound processes) to start
-  if type(modules) != list:  
+  if type(modules) != list:
     modules = [modules]
 #
 
@@ -166,21 +165,21 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 #             these use multiprocessing.Queue for data transfer
   thrds = []
   procs =[]
-    
+
   # rate display
   if 'mpRMeter' in modules:
     RMcidx, RMmpQ = BM.BMregister_mpQ()
-    procs.append(mp.Process(name='RMeter', target = mpRMeter, 
+    procs.append(mp.Process(name='RMeter', target = mpRMeter,
               args=(RMmpQ, 75., 2500., 'trigger rate history') ) )
 #                       maxRate interval name
   # Voltmeter display
   if 'mpVMeter' in modules:
     VMcidx, VMmpQ = BM.BMregister_mpQ()
-    procs.append(mp.Process(name='VMeter', target = mpVMeter, 
+    procs.append(mp.Process(name='VMeter', target = mpVMeter,
               args=(VMmpQ, PSconf.OscConfDict, 500., 'effective Voltage') ) )
 #                         config interval name
 
-# ---> put your own code here 
+# ---> put your own code here
 
   if ANAscript:
     try:
@@ -194,7 +193,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
   if len(procs)==0 and len(thrds)==0 :
     print ('!!! nothing to do - running BM only')
-# start all background processes   
+# start all background processes
   for prc in procs:
     prc.deamon = True
     prc.start()
@@ -206,11 +205,11 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
     thrd.start()
   time.sleep(1.) # wait for all threads to start, then ...
 # ...start run
-  BM.run() 
+  BM.run()
 
 # --- LOOP
   try:
-# ->> read keyboard (control Buffermanager)<<- 
+# ->> read keyboard (control Buffermanager)<<-
     BM.kbdCntrl()
     print(sys.argv[0]+': End command received - closing down ...')
 
