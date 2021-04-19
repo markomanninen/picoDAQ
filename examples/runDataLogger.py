@@ -15,9 +15,8 @@ import sys, time, yaml, numpy as np, threading, multiprocessing as mp
 # import relevant pieces from picodaqa
 import picodaqa.picoConfig
 from picodaqa.mpDataLogger import mpDataLogger
-from picodaqa.read_config import read_yaml_configuration,
+from picodaqa.read_config import read_yaml_configuration,\
                                  read_yaml_configuration_with_argv
-
 from functions import stop_processes, threaded_keyboard_input
 
 def kbdInput(cmdQ, info_text):
