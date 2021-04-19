@@ -89,7 +89,7 @@ class PSconfig(object):
       self.XY = confdict["XY"]
     else:
       self.XY = True
-        
+
     if self.PSmodel == '2000':
       self.pretrig = 0.
       print('  Pretrig sampling disabled on device ', self.PSmodel)
@@ -332,4 +332,4 @@ class PSconfig(object):
     if self.verbose: print(prompt + "closing connection to device")
     self.picoDevice.stop()
     self.picoDevice.close()
-    time.sleep(0.5)
+    time.sleep(.5)
