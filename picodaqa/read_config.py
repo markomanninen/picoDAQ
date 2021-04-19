@@ -43,7 +43,7 @@ def read_yaml_configuration_with_argv(configuration_file = ''):
   check for / read command line arguments
   read DAQ configuration file
   '''
-  if len(sys.argv) == 2:
+  if len(sys.argv) > 1:
     configuration_file = sys.argv[1]
   print('    DAQconfiguration from file ' + configuration_file)
   try:
