@@ -49,6 +49,8 @@ import picodaqa.BufferMan as BMan
 from picodaqa.mpOsci import mpOsci
 from picodaqa.mpVMeter import mpVMeter
 from picodaqa.mpRMeter import mpRMeter
+from picodaqa.read_config import read_yaml_configuration,
+                                 read_yaml_configuration_with_argv
 
 # !!!!
 # import matplotlib.pyplot as plt
@@ -63,30 +65,20 @@ from picodaqa.mpRMeter import mpRMeter
 
 def stop_processes(proclst):
   '''
-    Close Device at end of run
+  Close all running processes at end of run
   '''
-  for p in proclst: # stop all sub-processes
-    print('    terminating ' + p.name)
-    p.terminate()
-  time.sleep(2)
+  # stop all sub-processes
+  for p in proclst:
+    if p.is_alive():
+      print('    terminating ' + p.name)
+      p.terminate()
+      time.sleep(1.)
 
 if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
   print('\n*==* script ' + sys.argv[0] + ' running \n')
 
-# check for / read command line arguments
-  # read DAQ configuration file
-  if len(sys.argv)==2:
-    DAQconfFile = sys.argv[1]
-  else:
-    DAQconfFile = 'DAQconfig.yaml'
-  print('    DAQconfiguration from file ' + DAQconfFile)
-  try:
-    with open(DAQconfFile) as f:
-      DAQconfdict = yaml.load(f, Loader = yaml.FullLoader)
-  except:
-    print('     failed to read DAQ configuration file ' + DAQconfFile)
-    exit(1)
+  DAQconfdict = read_yaml_configuration_with_argv('DAQconfig.yaml')
 
   if "DeviceFile" in DAQconfdict:
     DeviceFile = DAQconfdict["DeviceFile"] # configuration file for scope
@@ -112,43 +104,41 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   if "verbose" in DAQconfdict:
     verbose = DAQconfdict["verbose"]
   else:
-    verbose = 1   # print (detailed) info if >0
+    verbose = 1 # print (detailed) info if >0
 
   # read scope configuration file
   print('    Device configuration from file ' + DeviceFile)
   try:
-    with open(DeviceFile) as f:
-      PSconfdict = yaml.load(f, Loader = yaml.FullLoader)
+    PSconfdict = read_yaml_configuration(DeviceFile)
   except:
     print('     failed to read scope configuration file ' + DeviceFile)
     exit(1)
 
   # read Buffer Manager configuration file
   try:
-    with open(BMfile) as f:
-        BMconfdict = yaml.load(f, Loader = yaml.FullLoader)
+    BMconfdict = read_yaml_configuration(BMfile)
   except:
-   print('     failed to read BM input file ' + BMfile)
-   exit(1)
+    print('     failed to read BM input file ' + BMfile)
+    exit(1)
 
-# initialisation
+  # initialisation
   print(' -> initializing PicoScope')
 
-# configure and initialize PicoScope
+  # configure and initialize PicoScope
   PSconf = picodaqa.picoConfig.PSconfig(PSconfdict)
   PSconf.init()
   # copy some of the important configuration variables
   NChannels = PSconf.NChannels # number of channels in use
   TSampling = PSconf.TSampling # sampling interval
-  NSamples = PSconf.NSamples   # number of samples
+  NSamples  = PSconf.NSamples  # number of samples
 
-# configure Buffer Manager  ...
+  # configure Buffer Manager  ...
   print(' -> initializing BufferMan')
   BM = BMan.BufferMan(BMconfdict, PSconf)
-# ... tell device what its buffer manager is ...
+  # ... tell device what its buffer manager is ...
   PSconf.setBufferManagerPointer(BM)
 
-# ... and start data acquisition thread.
+  # ... and start data acquisition thread.
   if verbose:
     print(" -> starting Buffer Manager Threads")
   BM.start() # set up buffer manager processes
@@ -156,28 +146,27 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   if 'DAQmodules' in BMconfdict:
     modules = modules + BMconfdict["DAQmodules"]
 
-# list of modules (= backgound processes) to start
+  # list of modules (= backgound processes) to start
   if type(modules) != list:
     modules = [modules]
-#
-
 # modules to be run as sub-processes
-#             these use multiprocessing.Queue for data transfer
+# these use multiprocessing.Queue for data transfer
   thrds = []
-  procs =[]
+  procs = []
 
   # rate display
   if 'mpRMeter' in modules:
     RMcidx, RMmpQ = BM.BMregister_mpQ()
-    procs.append(mp.Process(name='RMeter', target = mpRMeter,
-              args=(RMmpQ, 75., 2500., 'trigger rate history') ) )
-#                       maxRate interval name
+    procs.append(mp.Process(name = 'RMeter', target = mpRMeter,
+                 args=(RMmpQ, 75.,    2500.,   'trigger rate history') ) )
+#                      queue  maxRate interval name
+
   # Voltmeter display
   if 'mpVMeter' in modules:
     VMcidx, VMmpQ = BM.BMregister_mpQ()
-    procs.append(mp.Process(name='VMeter', target = mpVMeter,
-              args=(VMmpQ, PSconf.OscConfDict, 500., 'effective Voltage') ) )
-#                         config interval name
+    procs.append(mp.Process(name = 'VMeter', target = mpVMeter,
+                 args=(VMmpQ, PSconf.OscConfDict, 500.,    'effective Voltage') ) )
+#                      queue  configuration       interval name
 
 # ---> put your own code here
 
@@ -209,7 +198,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
 # --- LOOP
   try:
-# ->> read keyboard (control Buffermanager)<<-
+# ->> read keyboard (control Buffermanager) <<-
     BM.kbdCntrl()
     print(sys.argv[0]+': End command received - closing down ...')
 
@@ -219,7 +208,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
   except KeyboardInterrupt:
     print(sys.argv[0]+': keyboard interrupt - closing down ...')
-    BM.end()  # shut down BufferManager
+    BM.end() # shut down BufferManager
 
   finally:
 # END: code to clean up
