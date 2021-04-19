@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import sys, time
+
 # helper function for example runners
 
 def stop_processes(proclst):
@@ -22,8 +24,11 @@ def threaded_keyboard_input(cmdQ):
     get_input = raw_input
   else:
     get_input = input
+  # set up callback function to use input getter and command queue
+  # from runner scripts with the given info text
+  def callback(info_text):
+      keyboard_input_text = get_input(20 * ' ' + info_text)
+      cmdQ.put(keyboard_input_text)
+      keyboard_input_text = ''
 
-  return lambda info_text:
-    keyboard_input_text = get_input(20 * ' ' + info_text)
-    cmdQ.put(keyboard_input_text)
-    keyboard_input_text = ''
+  return callback
