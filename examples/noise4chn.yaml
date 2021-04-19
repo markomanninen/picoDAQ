@@ -1,0 +1,19 @@
+# configuration for PicoScope
+
+PSmodel:      2000a
+
+picoChannels: [A, B, C, D]
+ChanModes:    [DC, DC, DC, DC]
+ChanRanges:   [500.E-3, 500.E-3, 500.E-3, 500.E-3]
+ChanColors:   [darkblue, sienna, indigo, red]
+
+sampleTime:   25.E-3
+Nsamples:     200
+
+trgChan:      A
+trgThr:       -15.E-3
+trgTyp:       Rising
+trgTO:        10000
+pretrig:      0.15
+
+frqSG:        0.0
