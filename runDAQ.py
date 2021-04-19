@@ -49,7 +49,7 @@ import picodaqa.BufferMan as BMan
 from picodaqa.mpOsci import mpOsci
 from picodaqa.mpVMeter import mpVMeter
 from picodaqa.mpRMeter import mpRMeter
-from picodaqa.read_config import read_yaml_configuration,
+from picodaqa.read_config import read_yaml_configuration,\
                                  read_yaml_configuration_with_argv
 
 # !!!!
