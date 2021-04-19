@@ -91,7 +91,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
           sig[i] = b.sum() / NSamples # average
         DGmpQ.put(sig)
 
-      # check for keboard input
+      # check for keyboard input
       if not cmdQ.empty():
         cmd = cmdQ.get()
         if cmd == 'E': # E(nd)
@@ -118,6 +118,5 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
   finally:
     PSconf.closeDevice() # close down hardware device
-    time.sleep(1.)
     stop_processes(procs) # stop all sub-processes in list
     print('*==* ' + sys.argv[0] + ': normal end')
