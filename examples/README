@@ -11,4 +11,4 @@ To start examples in this directory, type
 Note: Picodaqa file in the examples directory is a symbolic link to upper
 directory in unix/linux fashion. In windows you need to install picodaq to
 the global site packages or move example scripts and related files to root
-directory.
+directory. To do so, run: ´python setup.py install´
