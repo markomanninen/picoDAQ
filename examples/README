@@ -1,9 +1,14 @@
-# to start examples in this direcotry, type
+To start examples in this directory, type
 
 ./runCosmo DAQ_xxx.yaml
 
-
 # DAQ_Kanne.yaml : configuration for Kamiokanne
 
-# DAQ_Cosmon.yaml : configuration for Cosmo-Panels
+# DAQ_Cosmo.yaml : configuration for Cosmo-Panels
 
+# DAQ_noise.yaml : configuration for oscilloscope in Python window
+
+Note: Picodaqa file in the examples directory is a symbolic link to upper
+directory in unix/linux fashion. In windows you need to install picodaq to
+the global site packages or move example scripts and related files to root
+directory.
