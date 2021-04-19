@@ -1,8 +1,7 @@
-# configuration for runDAQ.py
+# configuration for runDAQ.py with oscilloscope window
 
 DeviceFile:         picoOsci.yaml
 BMfile:             BMconfig.yaml
 DAQmodules:         [mpRMeter, mpVMeter] # other modules to start
 
 # ANAscript: testDAQ.py
-

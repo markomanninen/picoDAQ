@@ -1,8 +1,7 @@
-# configuration for runDAQ.py
+# configuration for runDAQ.py with Cosmo-Panels
 
 DeviceFile:     SiPMpulse.yaml
 BMfile:         BMconfig.yaml
 ANAscript:      anaDAQ.py
 
 #DAQmodules: [mpRMeter, mpVMeter] # other modules to start
-
