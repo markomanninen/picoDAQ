@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# script runOsci.py
+'''
+This script reads data from PicoScope and displays them in oscilloscope mode
 
-'''Data visualisation
-     this script reads data from PicoScope
-     and displays them in oscilloscope mode
-
-     Usage: ./runVoltmeter.py [<Oscilloscpope_config>.yaml Interval]
+Usage: ./runOsci.py [<Oscilloscpope_config>.yaml]
 '''
 
 from __future__ import print_function, division, unicode_literals
@@ -19,33 +18,13 @@ from picodaqa.mpOsci import mpOsci
 from picodaqa.read_config import read_yaml_configuration,
                                  read_yaml_configuration_with_argv
 
-# helper functions
+from functions import stop_processes, threaded_keyboard_input
 
-def kbdInput(cmdQ):
-  '''
-    read keyboard input, run as backround-thread to aviod blocking
-  '''
-  # 1st, remove pyhton 2 vs. python 3 incompatibility for keyboard input
-  if sys.version_info[:2] <= (2,7):
-   get_input = raw_input
-  else:
-    get_input = input
-
+def kbdInput(cmdQ, info_text):
+  queued_input = threaded_keyboard_input(cmdQ)
+  # active state comes from the main function
   while ACTIVE:
-    kbdtxt = get_input(20 * ' ' + 'type -> P(ause), R(esume), or (E)nd+ <ret> ')
-    cmdQ.put(kbdtxt)
-    kbdtxt = ''
-
-def stop_processes(proclst):
-  '''
-  Close all running processes at end of run
-  '''
-  # stop all sub-processes
-  for p in proclst:
-    if p.is_alive():
-      print('    terminating ' + p.name)
-      p.terminate()
-      time.sleep(1.)
+    queued_input(info_text)
 
 if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
@@ -62,8 +41,8 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   NSamples  = PSconf.NSamples  # number of samples
   buf = np.zeros( (NChannels, NSamples) ) # data buffer for PicoScope driver
 
-  thrds=[]
-  procs=[]
+  thrds = []
+  procs = []
   deltaT = 10.  # max. update interval in ms
   cmdQ =  mp.Queue(1) # Queue for command input
   datQ =  mp.Queue(1) # Queue for data transfer to sub-process
@@ -74,8 +53,8 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 #                      queue configuration       interval name
 
   thrds.append(threading.Thread(name = 'kbdInput', target = kbdInput,
-               args = (cmdQ,) ) )
-#                      queue
+               args = (cmdQ, 'type -> P(ause), R(esume), or (E)nd + <ret> ') ) )
+#                      queue info_text
 
   # start subprocess(es)
   for prc in procs:
@@ -106,13 +85,13 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
       # check for keyboard input
       if not cmdQ.empty():
         cmd = cmdQ.get()
-        if cmd == 'E':
+        if cmd == 'E': # E(nd)
           print('\n' + sys.argv[0] + ': End command recieved - closing down')
           ACTIVE = False
           break
-        elif cmd == 'P':
+        elif cmd == 'P': # P(ause)
           DAQ_ACTIVE = False
-        elif cmd == 'R':
+        elif cmd == 'R': # R(esume)
           DAQ_ACTIVE = True
 
   except KeyboardInterrupt:
