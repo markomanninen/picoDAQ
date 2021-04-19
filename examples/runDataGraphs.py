@@ -16,7 +16,8 @@ import sys, time, yaml, numpy as np, threading, multiprocessing as mp
 # import relevant pieces from picodaqa
 import picodaqa.picoConfig
 from picodaqa.mpDataGraphs import mpDataGraphs
-
+from picodaqa.read_config import read_yaml_configuration,\
+                                 read_yaml_configuration_with_argv
 from functions import stop_processes, threaded_keyboard_input
 
 def kbdInput(cmdQ, info_text):
@@ -52,13 +53,13 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   deltaT = interval * 1000. # update interval in ms
   cmdQ =  mp.Queue(1) # queue for command input
   DGmpQ =  mp.Queue(1) # queue for data transfer to sub-process
-  XY = True # display Channel A vs. B if True
+  XY = PSconf.XY # display Channel A vs. B if True
   procs.append(mp.Process(name = 'DataGraphs', target = mpDataGraphs,
                args = (DGmpQ, PSconf.OscConfDict, deltaT,  '(Volt)', XY,   cmdQ) ) )
 #                      queue  configuration       interval name      graph queue
 
   thrds.append(threading.Thread(name = 'kbdInput', target = kbdInput,
-               args = (cmdQ, 'type -> P(ause), R(esume), E(nd) or s(ave) + <ret> ')  ) )
+               args = (cmdQ, 'type -> P(ause), R(esume), E(nd) or s(ave) + <ret> ') ) )
 #                      queue info_text
 
 # start subprocess(es)

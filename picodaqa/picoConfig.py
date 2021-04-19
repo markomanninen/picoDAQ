@@ -83,6 +83,13 @@ class PSconfig(object):
       self.pretrig=confdict["pretrig"]
     else:
       self.pretrig=0.05      # fraction of samples before trigger
+
+    # XY graph for voltmeter
+    if "XY" in confdict:
+      self.XY = confdict["XY"]
+    else:
+      self.XY = True
+        
     if self.PSmodel == '2000':
       self.pretrig = 0.
       print('  Pretrig sampling disabled on device ', self.PSmodel)
