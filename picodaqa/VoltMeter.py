@@ -26,7 +26,7 @@ class VoltMeter(object):
       # Channel Limits for effective voltage
        self.ChanLim.append( (0., CRanges[i]-COffsets[i]) )
       # Channel Limits for average voltage
-     #  self.ChanLim.append( (-CRanges[i]-COffsets[i], 
+     #  self.ChanLim.append( (-CRanges[i]-COffsets[i],
      #                        CRanges[i]-COffsets[i]) )
 
     self.ChanNams = OscConfDict['Channels']
@@ -35,7 +35,7 @@ class VoltMeter(object):
    # data structures needed throughout the class
     self.ix = np.linspace(-self.Npoints+1, 0, self.Npoints) # history plot
     self.ind = self.bwidth + np.arange(self.NChan) # bar position for voltages
-  # 
+  #
     self.V = np.empty(self.NChan)
     self.stdV = np.empty(self.NChan)
     self.Vhist = np.zeros( [self.NChan, self.Npoints] )
@@ -77,7 +77,7 @@ class VoltMeter(object):
       axbar2.set_ylim(*self.ChanLim[1])
       axbar2.set_ylabel('Chan B (Veff)', color = self.ChanColors[1])
   # Voltage in Text format
-    axes.append(plt.subplot2grid((6,1),(0,0)) )
+    axes.append( plt.subplot2grid( (6,1), (0,0) ) )
     axtxt=axes[-1]
     axtxt.set_frame_on(False)
     axtxt.get_xaxis().set_visible(False)
@@ -98,16 +98,16 @@ class VoltMeter(object):
 #    self.bgraph = self.axes[0].bar(ind, np.zeros(self.NChan), self.bwidth,
 #                           align='center', color='grey', alpha=0.5)
     self.bgraph1, = self.axbar1.bar(self.ind[0], 0. , self.bwidth,
-       align='center', color = self.ChanColors[0], alpha=0.5) 
+       align='center', color = self.ChanColors[0], alpha=0.5)
     if self.NChan > 1:
       self.bgraph2, = self.axbar2.bar(self.ind[1], 0. , self.bwidth,
-          align='center', color = self.ChanColors[1], alpha=0.5) 
+          align='center', color = self.ChanColors[1], alpha=0.5)
   # history graphs
     self.graphs=()
     for i, C in enumerate(self.ChanNams):
       if i > 1:
         break  # max. of 2 channels
-      g,= self.axes[i].plot(self.ix, np.zeros(self.Npoints), 
+      g,= self.axes[i].plot(self.ix, np.zeros(self.Npoints),
           color=self.ChanColors[i])
       self.graphs += (g,)
     self.animtxt = self.axes[-1].text(0.01, 0.05 , ' ',
@@ -117,10 +117,10 @@ class VoltMeter(object):
     self.t0=time.time() # remember start time
 
     if self.NChan > 1 :
-      return (self.bgraph1,) + (self.bgraph2,) + self.graphs + (self.animtxt,)  
+      return (self.bgraph1,) + (self.bgraph2,) + self.graphs + (self.animtxt,)
     else:
 # -- end VoltMeter.init()
-      return (self.bgraph1,) + self.graphs + (self.animtxt,)  
+      return (self.bgraph1,) + self.graphs + (self.animtxt,)
 
   def __call__( self, evt ):
     n, evNr, evTime, evData = evt
@@ -128,10 +128,10 @@ class VoltMeter(object):
       return self.init()
 
     k=n%self.Npoints
-    txt_t='Time  %.1fs' %(evTime)            
+    txt_t='Time  %.1fs' %(evTime)
     txt=[]
     for i, C in enumerate(self.ChanNams):
-      if i > 1: 
+      if i > 1:
         break  # works for 2 channels only
       self.V[i] = np.sqrt (np.inner(evData[i], evData[i])/len(evData[i]) )
       self.Vhist[i, k] = self.V[i]
@@ -143,7 +143,7 @@ class VoltMeter(object):
           np.concatenate((self.Vhist[i, k+1:], self.Vhist[i, :k+1]), axis=0) )
       else:
         self.graphs[i].set_data(self.ix, np.zeros(self.Npoints))
-      txt.append('  %s:   %.3gV +/-%.2gV' % (C, self.Vhist[i,k], 
+      txt.append('  %s:   %.3gV +/-%.2gV' % (C, self.Vhist[i,k],
                                                self.stdVhist[i,k]) )
     # update bar chart
 #      for r, v in zip(bgraph, V):
@@ -152,7 +152,7 @@ class VoltMeter(object):
       self.bgraph1.set_height(self.V[0])
       if self.NChan > 1:
         self.bgraph2.set_height(self.V[1])
-    else:  
+    else:
       self.bgraph1.set_height(0.)
       if self.NChan > 1:
         self.bgraph2.set_height(0.)
