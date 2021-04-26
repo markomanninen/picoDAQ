@@ -24,21 +24,20 @@ import matplotlib.pyplot as plt, matplotlib.animation as anim
 # import Voltmeter class
 from .DataLogger import *
 
-
-def mpDataLogger(Q, conf, WaitTime=100., name='(Veff)', cmdQ = None):
+def mpDataLogger(Q, conf, WaitTime = 100., name = '(Veff)', cmdQ = None):
   '''effective Voltage of data passed via multiprocessing.Queue
     Args:
-      Q:         multiprocessing.Queue()   
+      Q:         multiprocessing.Queue()
       conf:      picoConfig object
       WaitTime:  time between updates in ms
       name:      axis label
-      cmdQ:      multiprocessing.Queue() for commands   
+      cmdQ:      multiprocessing.Queue() for commands
   '''
 
-  # Generator to provide data to animation
+  # generator to provide data to animation
   def yieldEvt_fromQ():
-  # receives data via Queue from package mutiprocessing 
-    interval = WaitTime/1000.  # in s 
+  # receives data via Queue from package mutiprocessing
+    interval = WaitTime/1000.  # in s
     cnt = 0
     lagging=False
     while True:
@@ -54,20 +53,19 @@ def mpDataLogger(Q, conf, WaitTime=100., name='(Veff)', cmdQ = None):
       else:
         yield None # send empty event if no new data
 
-# guarantee correct timing 
+# guarantee correct timing
       dtcor = interval - time.time() + T0
-      if dtcor > 0. :  
-        time.sleep(dtcor) 
-        if lagging: 
+      if dtcor > 0. :
+        time.sleep(dtcor)
+        if lagging:
           LblStatus.config(text=' OK ', fg = 'green')
           lagging=False
       else:
         lagging=True
         LblStatus.config(text='! lagging !', fg='red')
 
-    # print('*==* yieldEvt_fromQ: received END event')          
+    # print('*==* yieldEvt_fromQ: received END event')
     sys.exit()
-
 
   def cmdResume():
     cmdQ.put('R')
@@ -84,14 +82,14 @@ def mpDataLogger(Q, conf, WaitTime=100., name='(Veff)', cmdQ = None):
 
   def cmdSave():
     try:
-      filename = asksaveasfilename(initialdir='.', 
-               initialfile='DataLogger.png', 
+      filename = asksaveasfilename(initialdir='.',
+               initialfile='DataLogger.png',
                title='select file name')
       figDL.savefig(filename)
-    except: 
-      pass   
+    except:
+      pass
 
-# ------- executable part -------- 
+# ------- executable part --------
 #  print(' -> mpDataLogger starting')
 
   DL = DataLogger(WaitTime, conf, name)
@@ -108,7 +106,7 @@ def mpDataLogger(Q, conf, WaitTime=100., name='(Veff)', cmdQ = None):
        root.destroy()
   root.protocol("WM_DELETE_WINDOW", _delete_window)
 
-# Comand buttons
+# command buttons
   frame = Tk.Frame(master=root)
   frame.grid(row=0, column=8)
   frame.pack(padx=5, side=Tk.BOTTOM)
@@ -122,13 +120,13 @@ def mpDataLogger(Q, conf, WaitTime=100., name='(Veff)', cmdQ = None):
   clock = Tk.Label(frame)
   clock.grid(row=0, column=5)
 
-  buttonSv = Tk.Button(frame,text='save',width=8,fg='purple', command=cmdSave)
+  buttonSv = Tk.Button(frame, text='save', width=8, fg='purple', command=cmdSave)
   buttonSv.grid(row=0, column=4)
 
-  buttonP = Tk.Button(frame,text='Pause',width=8,fg='blue', command=cmdPause)
+  buttonP = Tk.Button(frame, text='Pause', width=8, fg='blue', command=cmdPause)
   buttonP.grid(row=0, column=3)
 
-  buttonR = Tk.Button(frame,text='Resume',width=8,fg='blue', command=cmdResume)
+  buttonR = Tk.Button(frame, text='Resume', width=8, fg='blue', command=cmdResume)
   buttonR.grid(row=0, column=2)
   buttonR.config(state=Tk.DISABLED)
 
@@ -140,17 +138,16 @@ def mpDataLogger(Q, conf, WaitTime=100., name='(Veff)', cmdQ = None):
   canvas.get_tk_widget().pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
   canvas._tkcanvas.pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
 
-
 # set up matplotlib animation
   tw = max(WaitTime - 20., 0.5) # smaller than WaitTime to allow for processing
   VMAnim = anim.FuncAnimation(figDL, DL, yieldEvt_fromQ,
                          interval = tw , init_func=DL.init,
                          blit=True, fargs=None, repeat=True, save_count=None)
-                       # save_count=None is a (temporary) work-around 
+                       # save_count=None is a (temporary) work-around
                        #     to fix memory leak in animate
   try:
     Tk.mainloop()
-   
+
   except:
     print('*==* mpDataLogger: termination signal recieved')
   sys.exit()
