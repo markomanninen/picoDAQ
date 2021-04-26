@@ -24,20 +24,20 @@ import matplotlib.pyplot as plt, matplotlib.animation as anim
 # import DataGraphs class
 from .DataGraphs import *
 
-def mpDataGraphs(Q, conf, WaitTime=500., 
+def mpDataGraphs(Q, conf, WaitTime=500.,
                 name='effective Voltage', XYmode= False, cmdQ=None):
   '''effective Voltage of data passed via multiprocessing.Queue
     Args:
       conf: picoConfig object
-      Q:    multiprocessing.Queue()   
+      Q:    multiprocessing.Queue()
   '''
 
   # Generator to provide data to animation
   def yieldEvt_fromQ():
-# random consumer of Buffer Manager, receives an event copy 
+# random consumer of Buffer Manager, receives an event copy
    # via a Queue from package mutiprocessing
 
-    interval = WaitTime/1000.  # in ms 
+    interval = WaitTime/1000.  # in ms
     cnt = 0
     lagging = False
 
@@ -52,18 +52,18 @@ def mpDataGraphs(Q, conf, WaitTime=500.,
       else:
         yield None # send empty event if no new data
 
-# guarantee correct timing 
+# guarantee correct timing
       dtcor = interval - time.time() + T0
-      if dtcor > 0. :  
-        time.sleep(dtcor) 
-        if lagging: 
+      if dtcor > 0. :
+        time.sleep(dtcor)
+        if lagging:
           LblStatus.config(text='')
           lagging=False
       else:
         lagging=True
         LblStatus.config(text='! lagging !', fg='red')
 
-    # print('*==* yieldEvt_fromQ: received END event')          
+    # print('*==* yieldEvt_fromQ: received END event')
     sys.exit()
 
   def cmdResume():
@@ -75,7 +75,7 @@ def mpDataGraphs(Q, conf, WaitTime=500.,
     cmdQ.put('P')
     buttonP.config(text='paused', fg='grey', state=Tk.DISABLED)
     buttonR.config(state=Tk.NORMAL)
-    
+
 
   def cmdEnd():
     cmdQ.put('E')
@@ -83,13 +83,13 @@ def mpDataGraphs(Q, conf, WaitTime=500.,
   def cmdSave():
     cmdPause()
     try:
-      filename = asksaveasfilename(initialdir='.', initialfile='DGraphs.png', 
+      filename = asksaveasfilename(initialdir='.', initialfile='DGraphs.png',
                title='select file name')
-      figDG.savefig(filename) 
-    except: 
+      figDG.savefig(filename)
+    except:
       pass
- 
-# ------- executable part -------- 
+
+# ------- executable part --------
 #  print(' -> mpDataGraph starting')
 
   DG = DataGraphs(WaitTime, conf, name, XYmode)
@@ -144,7 +144,7 @@ def mpDataGraphs(Q, conf, WaitTime=500.,
   DGAnim = anim.FuncAnimation(figDG, DG, yieldEvt_fromQ,
                          interval = tw, init_func = DG.init,
                          blit=True, fargs=None, repeat=True, save_count=None)
-                       # save_count=None is a (temporary) work-around 
+                       # save_count=None is a (temporary) work-around
                        #     to fix memory leak in animate
   Tk.mainloop()
   print('*==* mpDataGraphs: terminating')

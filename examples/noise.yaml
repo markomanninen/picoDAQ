@@ -1,20 +1,19 @@
- configuration for Picoscpope
+# configuration for PicoScope
 
 PSmodel: 2000a
 
 picoChannels:  [A, B]
 ChanModes:     [DC, DC]
-ChanRanges:    [500.E-3, 500.E-3] 
+ChanRanges:    [500.E-3, 500.E-3]
 ChanColors:    [darkblue, sienna, indigo]
 
-sampleTime: 25.E-3 
-Nsamples: 200    # short data sample 
+sampleTime: 25.E-3
+Nsamples: 200    # short data sample
 
-trgChan: A      
-trgThr: -15.E-3       
-trgTyp: Rising   
-trgTO: 10000        
-pretrig: 0.15 
+trgChan: A
+trgThr: -15.E-3
+trgTyp: Rising
+trgTO: 10000
+pretrig: 0.15
 
 frqSG: 0.0
-

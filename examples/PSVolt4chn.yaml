@@ -1,0 +1,18 @@
+# example of a configuration file for PicoScope 2000 Series
+PSmodel: 2000a
+
+# channel configuration
+picoChannels: [A, B, C, D]
+ChanRanges:   [0.02, 0.02, 0.02, 0.02]
+ChanOffsets:  [0, 0, 0, 0]
+ChanModes:    [AC, AC, AC, AC]
+
+sampleTime:   2.0E-05
+Nsamples:     10
+
+# xy graph for voltimeter
+XY:           false
+
+frqSG: 10.E+4 # signal generator on
+#frqSG:        0.0 # signal generator off
+swpSG:        UpDown
