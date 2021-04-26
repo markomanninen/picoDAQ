@@ -5,7 +5,7 @@
      this script reads data from PicoScope 
      and displays them in oscilloscope mode 
 
-     Usage: ./runVoltmeter.py [<Oscilloscpope_config>.yaml Interval]
+     Usage: ./runOsci.py [<Oscilloscpope_config>.yaml]
 '''
 
 from __future__ import print_function, division, unicode_literals
@@ -23,14 +23,14 @@ def kbdInput(cmdQ):
   ''' 
     read keyboard input, run as backround-thread to aviod blocking
   '''
-# 1st, remove pyhton 2 vs. python 3 incompatibility for keyboard input
-  if sys.version_info[:2] <=(2,7):
-   get_input = raw_input
+# 1st, remove python 2 vs. python 3 incompatibility for keyboard input
+  if sys.version_info[:2] <= (2,7):
+    get_input = raw_input
   else: 
     get_input = input
  
   while ACTIVE:
-    kbdtxt = get_input(20*' ' + 'type -> P(ause), R(esume), or (E)nd+ <ret> ')
+    kbdtxt = get_input(20 * ' ' + 'type -> P(ause), R(esume), or (E)nd+ <ret> ')
     cmdQ.put(kbdtxt)
     kbdtxt = ''
 
@@ -40,8 +40,9 @@ def stop_processes(proclst):
   '''
   for p in proclst: # stop all sub-processes
     if p.is_alive():
-      print('    terminating '+p.name)
-      if p.is_alive(): p.terminate()
+      print('    terminating ' + p.name)
+      if p.is_alive():
+        p.terminate()
       time.sleep(1.)
 
 if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
@@ -60,13 +61,13 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   print('    Device configuration from file ' + PSconfFile)
   try:
     with open(PSconfFile) as f:
-      PSconfDict=yaml.load(f)
+      PSconfDict = yaml.load(f, Loader = yaml.FullLoader)
   except:
     print('     failed to read scope configuration file ' + PSconfFile)
     exit(1)
 
 # configure and initialize PicoScope
-  PSconf=picodaqa.picoConfig.PSconfig(PSconfDict)
+  PSconf = picodaqa.picoConfig.PSconfig(PSconfDict)
   PSconf.init()
   # copy some of the important configuration variables
   NChannels = PSconf.NChannels # number of channels in use
@@ -74,14 +75,14 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   NSamples = PSconf.NSamples   # number of samples
   buf = np.zeros( (NChannels, NSamples) ) # data buffer for PicoScope driver
 
-  thrds=[]
-  procs=[]
+  thrds = []
+  procs = []
   deltaT = 10.  # max. update interval in ms
   cmdQ =  mp.Queue(1) # Queue for command input
   datQ =  mp.Queue(1) # Queue for data transfer to sub-process
   XY = True  # display Channel A vs. B if True
   name = 'Oscilloscope'
-  procs.append(mp.Process(name=name, target = mpOsci, 
+  procs.append(mp.Process(name = name, target = mpOsci, 
                args=(datQ, PSconf.OscConfDict, deltaT, name) ) )
 #                    Queue      config        interval name
 
@@ -110,10 +111,10 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
     T0 = time.time()
     while True:
       if DAQ_ACTIVE:
-        cnt +=1
+        cnt += 1
         PSconf.acquireData(buf) # read data from PicoScope
         # construct an "event" like BufferMan.py does and send via Queue
-        datQ.put( (cnt, time.time()-T0, buf) )
+        datQ.put( (cnt, time.time() - T0, buf) )
 
    # check for keyboard input
       if not cmdQ.empty():
@@ -130,7 +131,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   except KeyboardInterrupt:
     DAQ_ACTIVE = False     
     ACTIVE = False
-    print('\n' + sys.argv[0]+': keyboard interrupt - closing down ...')
+    print('\n' + sys.argv[0] + ': keyboard interrupt - closing down ...')
 
   finally:
     PSconf.closeDevice() # close down hardware device
