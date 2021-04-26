@@ -7,16 +7,11 @@
 
 # ->>> code from here inserted as 'testDAQ.py' in runDAQ.py
 
-# import analysis code as library
-from exampleConsumers import *
-
 # get Client Id from BufferManager (must be done in mother process)
-cId_o = BM.BMregister() 
-procs.append(mp.Process(target=randConsumer,
-                             args=(BM, cId_o) ) )
+cId_o = BM.BMregister()
+procs.append(mp.Process(name = 'randConsumer', target = randConsumer, args = (cId_o,) ) )
 # client Id for random consumer
-cId_r = BM.BMregister() 
-procs.append(mp.Process(target=obligConsumer,
-                             args=(BM, cId_r) ) )
+cId_r = BM.BMregister()
+procs.append(mp.Process(name = 'obligConsumer', target = obligConsumer, args = (cId_r,) ) )
 
 # <<< - end of inserted code

@@ -34,8 +34,7 @@
   and an open cable to Channel A
 '''
 
-from __future__ import print_function, division, unicode_literals
-from __future__ import absolute_import
+from __future__ import print_function, division, unicode_literals, absolute_import
 
 import sys, time, yaml, numpy as np, threading
 #from multiprocessing import Process, Queue
@@ -61,6 +60,79 @@ from picodaqa.read_config import read_yaml_configuration,\
 #     scope settings defined in .yaml-File, see picoConfig
 # --------------------------------------------------------------
 
+def obligConsumer(cId):
+  '''
+    test readout speed: do nothing, just request data from buffer manager
+      - an example of an obligatory consumer, sees all data
+        (i.e. data acquisition is halted when no data is requested)
+
+      Args:
+        BM:   Buffer Manager instance
+        cId:  Buffer Manager client id (from main process)
+
+  '''
+  global BM
+  if not BM.ACTIVE.value:
+    sys.exit(1)
+# register with Buffer Manager
+  mode = 0    # obligatory consumer, data in evdata transferred as pointer
+
+  evcnt=0
+  while BM.ACTIVE.value:
+    e = BM.getEvent(cId, mode = mode)
+    if e != None:
+      evNr, evtime, evData = e
+      evcnt += 1
+      print('*==* obligConsumer: event Nr %i, %i events seen' % (evNr, evcnt))
+
+#    introduce random wait time to mimick processing activity
+    time.sleep(-0.25 * np.log(np.random.uniform(0.,1.)) )
+  return
+#-end def obligComsumer
+
+def randConsumer(cId):
+  '''
+    test readout speed:
+      does nothing except requesting random data samples from buffer manager
+  '''
+  global BM
+  if not BM.ACTIVE.value:
+    sys.exit(1)
+  mode = 1    # random consumer, eventdata as copy
+
+  evcnt=0
+  while BM.ACTIVE.value:
+    e = BM.getEvent(cId, mode=mode)
+    if e != None:
+      evNr, evtime, evData = e
+      evcnt+=1
+      print('*==* randConsumer: event Nr %i, %i events seen' % (evNr, evcnt))
+# introduce random wait time to mimick processing activity
+    time.sleep(np.random.randint(100,1000)/1000.)
+# - end def randConsumer()
+  return
+
+
+def subprocConsumer(Q):
+  '''
+    test consumer in subprocess using simple protocol
+      reads event data from multiprocessing.Queue()
+  '''
+  global BM
+  if not BM.ACTIVE.value:
+    sys.exit(1)
+
+  cnt = 0
+  try:
+    while True:
+      evN, evT, evBuf = Q.get()
+      cnt += 1
+      print('*==* mpQ: got event %i'%(evN) )
+      if cnt <= 3:
+        print('     event data \n', evBuf)
+      time.sleep(1.)
+  except:
+    print('subprocConsumer: signal recieved, ending')
 
 # some helper functions
 

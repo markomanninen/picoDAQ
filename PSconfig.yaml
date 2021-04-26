@@ -2,15 +2,15 @@
 PSmodel: 2000a
 
 # channel configuration
-picoChannels: [A, B]
-#picoChannels: [A, B, C, D]
-ChanRanges: [0.03, 0.35]
-#ChanRanges: [0.03, 0.35, 0.35, 0.35]
+#picoChannels: [A, B]
+picoChannels: [A, B, C, D]
+#ChanRanges: [0.03, 0.35]
+ChanRanges: [0.03, 0.35, 0.35, 0.35]
 sampleTime: 1.0E-05
 Nsamples: 200
 
 # trigger
-trgActive: false  # true to activate
+trgActive: true  # true to activate
 trgChan: B
 trgThr: 0.1
 pretrig: 0.05
