@@ -71,7 +71,12 @@ procs     = [] # list of sub-processes started by BufferMan
 thrds     = [] # list of sub-processes started by BufferMan
 mpQues    = []
 logQ      = None
-BMInfoQue = None
+prod_Que  = None
+
+runStarted = None
+BMIinterval = 1000.  # update interval in ms
+start_manageDataBuffer = None
+TStop = None
 
 
 def BufferMan(BMdict, DevConfArg):
@@ -88,13 +93,16 @@ def BufferMan(BMdict, DevConfArg):
   Args: configuration dictionary
         device Class
   '''
+  global NBuffers, BMmodules, LogFile, verbose, logTime, DevConf, NChannels
+  global NSamples, TSampling, rawDAQproducer, CBMbuf, CtimeStamp, CtrigStamp
+  global BMbuf, timeStamp, trigStamp, prod_Que, BMlock
   # read configuration dictionary
   if "NBuffers" in BMdict:
     NBuffers = BMdict["NBuffers"]
   if "BMmodules" in BMdict:
     BMmodules = BMdict["BMmodules"]
   if "LogFile" in BMdict:
-   LogFile = BMdict["LogFile"]
+    LogFile = BMdict["LogFile"]
   if "verbose" in BMdict:
     verbose = BMdict["verbose"]
   if "logTime" in BMdict:
@@ -134,7 +142,9 @@ def acquireData():
 
   Communicates with consumer via multiprocessing.Queue()
   '''
-  #  prlog('*==* BufMan:  !!! acquireData starting')
+  global BMbuf, rawDAQproducer, Tlife, ACTIVE, verbose, RUNNING
+  global timeStamp, trigStamp, Ttrig, Ntrig, prod_Que, NBuffers
+  prlog('*==* BufMan:  !!! acquireData starting')
   tlife = 0.
   ni = 0 # temporary variable
   ts = time.time()
@@ -203,6 +213,8 @@ def manageDataBuffer():
      - provide subset of events to "random" consumers (picoVMeter, oscilloscope)
 
   '''
+  global ACTIVE, prod_Que, verbose, trigStamp, timeStamp, request_Ques
+  global BMbuf, mpQues, logTime
   t0 = time.time()
   n0 = 0
   n = 0
@@ -284,6 +296,7 @@ def BMregister():
 
   Returns: client index
   '''
+  global BMlock, request_Ques, consumer_Ques, verbose
   BMlock.acquire() # called by many processes, needs protection ...
   request_Ques.append(Queue(1))
   consumer_Ques.append(Queue(1))
@@ -305,6 +318,7 @@ def BMregister_mpQ():
   Returns: client index
            multiprocess Queue
   '''
+  global mpQues, verbose
   mpQues.append(Queue(1))
   cid = len(mpQues) - 1
 
@@ -326,13 +340,16 @@ def getEvent(client_index, mode = 1):
             2: copy of event (olbigatory consumer)
     Returns: event data
   '''
+  global request_Ques, consumer_Ques, ACTIVE, trigStamp, timeStamp, BMbuf
+
   request_Ques[client_index].put(mode)
   cQ = consumer_Ques[client_index]
+  
   while cQ.empty():
     if not ACTIVE.value:
       return
     time.sleep(0.0005)
-  #prlog('*==* getEvent: received event %i'%evNr)
+  prlog('*==* getEvent: received event %i' % evNr)
   if mode != 0: # received copy of the event data
     return cQ.get()
   # received pointer to event buffer
@@ -347,6 +364,8 @@ def getEvent(client_index, mode = 1):
 # Run control fuctions
 # set-up Buffer Manager processes
 def start():
+  global verbose, ACTIVE, runStarted, start_manageDataBuffer
+  global logQ, procs, BMmodules, DevConf
   if verbose > 1:
     prlog('*==* BufferMan  starting acquisition threads')
   ACTIVE.value = True
@@ -373,7 +392,7 @@ def start():
   # BufferMan Info and control always started
   logQ = Queue()
   maxBMrate = 450.
-  BMIinterval = 1000.  # update interval in ms
+  #BMIinterval = 1000.  # update interval in ms
   procs.append(
     Process(name = 'BufManCntrl',
             target = mpBufManCntrl,
@@ -398,6 +417,7 @@ def start():
 
 # start run - this must not be started before all clients have registred
 def run():
+  global runStarted, start_manageDataBuffer, flog, LogFile, verbose, BMT0, procs, RUNNING
   # start manageDataBuffer process and initialize run
   if runStarted:
     prlog('*==* run already started - do nothing')
@@ -405,7 +425,7 @@ def run():
 
   tstart = time.time()
   if LogFile:
-    datetime = time.strftime('%y%m%d-%H%M',time.localtime(tstart))
+    datetime = time.strftime('%y%m%d-%H%M', time.localtime(tstart))
     flog = open(LogFile + '_' + datetime + '.log', 'w', 1)
 
   if verbose:
@@ -429,6 +449,7 @@ def run():
 
 # pause data acquisition - RUNNING flag evaluated by raw data producer
 def pause():
+  global tPause, RUNNING, STOPPED, verbose, readrate
   if not RUNNING.value:
     print('*==* BufferMan: Pause command recieved, but not running')
     return
@@ -445,6 +466,7 @@ def pause():
 
 # resume data acquisition
 def resume():
+  global tPause, dTPause, RUNNING, STOPPED, verbose, dTPause, tPause
   if RUNNING.value:
     print('*==* BufferMan: Resume command recieved, but already running')
     return
@@ -461,6 +483,7 @@ def resume():
 
 
 def setverbose(vlevel):
+  global verbose
   verbose = vlevel
 
 
@@ -480,6 +503,7 @@ def kbdin():
   '''
     read keyboard input, run as backround-thread to aviod blocking
   '''
+  global ACTIVE
   # 1st, remove pyhton 2 vs. python 3 incompatibility for keyboard input
   if sys.version_info[:2] <= (2,7):
     get_input = raw_input
@@ -487,16 +511,17 @@ def kbdin():
     get_input = input
   # keyboard input as thread
   while ACTIVE.value:
-    kbdtxt = get_input(30*' '+'type -> E(nd), P(ause), S(top) or R(esume) + <ret> ')
+    kbdtxt = get_input(30 * ' ' + 'type -> E(nd), P(ause), S(top) or R(esume) + <ret> ')
 
 
 def kbdCntrl():
   '''
     Control Buffer Manager via keyboard (stdin)
   '''
+  global ACTIVE
   kbdtxt = ''
   # set up a thread to read from keyboad without blocking
-  kbd_thrd=threading.Thread(target = kbdin)
+  kbd_thrd = threading.Thread(target = kbdin)
   kbd_thrd.daemon = True
   kbd_thrd.start()
   thrds.append(kbd_thrd)
@@ -510,6 +535,7 @@ def kbdCntrl():
 
 
 def readCommands_frQ(cmdQ):
+  global ACTIVE
   # a thread to receive control commands via a mp-Queue
   while ACTIVE.value:
     cmd = cmdQ.get()
@@ -524,6 +550,7 @@ def getBMCommandQue():
 
      Returns: multiprocess Queue
   '''
+  global verbose
   BMCommandQue = Queue(1)
   # start a background thread for reporting
   thr_BMCommandQ = threading.Thread(target = readCommands_frQ, args = (BMCommandQue,)  )
@@ -544,6 +571,8 @@ def getStatus():
       tuple: Running status, number of events,
          time of last event, rate, life fraction and buffer level
   '''
+  global tPause, dTPause, RUNNING, prod_Que, NBuffers, BMT0
+  global Ntrig, Ttrig, Tlife, readrate, lifefrac
   bL = (prod_Que.qsize() * 100) / NBuffers
   stat = RUNNING.value
   if tPause != 0.:
@@ -563,6 +592,7 @@ def getBMInfoQue():
 
      Returns: multiprocess Queue
   '''
+  global verbose
   BMInfoQue = Queue(1)
   # start a background thread for reporting
   thr_BMInfoQ = threading.Thread(target = reportStatus, args = (BMInfoQue,))
@@ -578,14 +608,16 @@ def getBMInfoQue():
 
 def reportStatus(Q):
   '''report Buffer manager staus to a multiprocessing Queue'''
+  global STOPPED, prod_Que, BMIinterval
   while not STOPPED:
-    if Q is not None and Q.empty():
+    if Q is not None and Q.empty() and prod_Que is not None:
       Q.put(getStatus())
     time.sleep(BMIinterval / 2000.) # ! convert from ms to s
 
 
 def prlog(m):
   ''' send a Message, to screen or to LogQ'''
+  global dTPause, flog, BMT0, logQ
   t = time.time() - BMT0.value # add time stamp to message
   s = '%.2f ' % (t) + m
   if logQ is None:
@@ -601,6 +633,7 @@ def prlog(m):
 
 # prints end-of-run summary
 def print_summary():
+  global flog, TStop, BMT0, dTPause, Ntrig, Tlife
   datetime = time.strftime('%y%m%d-%H%M', time.localtime(BMT0.value))
   if flog == None:
     flog = open('BMsummary_' + datetime + '.sum', 'w')
@@ -612,6 +645,7 @@ def print_summary():
 
 # put run in "stopped state" - BM processes remain active, no resume possible
 def stop():
+  global BMT0, Ntrig, TStop, Tlife, tPause, dTPause, ACTIVE, RUNNING, STOPPED, procs, verbose
   if not ACTIVE.value:
     print('*==* BufferMan: Stop command recieved, but not running')
     return
@@ -640,6 +674,7 @@ def stop():
 # end BufferManager, stop all processes
 # ACTIVE flag observed by all sub-processes
 def end():
+  global ACTIVE, RUNNING, procs, verbose
   if not ACTIVE.value:
     print('*==* BufferMan: End command recieved, but not active')
     return
@@ -659,5 +694,6 @@ def end():
 
 
 def __del__():
+  global ACTIVE, RUNNING
   RUNNING.value = False
   ACTIVE.value  = False

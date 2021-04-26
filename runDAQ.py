@@ -43,7 +43,8 @@ import multiprocessing as mp
 
 # import relevant pieces from picodaqa
 import picodaqa.picoConfig
-import picodaqa.BufferMan as BMan
+#import picodaqa.BufferMan as BMan
+import picodaqa.BufferManF as BM
 
 # animated displays running as background processes/threads
 from picodaqa.mpOsci import mpOsci
@@ -134,7 +135,8 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
   # configure Buffer Manager  ...
   print(' -> initializing BufferMan')
-  BM = BMan.BufferMan(BMconfdict, PSconf)
+  #BM = BMan.BufferMan(BMconfdict, PSconf)
+  BM.BufferMan(BMconfdict, PSconf)
   # ... tell device what its buffer manager is ...
   PSconf.setBufferManagerPointer(BM)
 
