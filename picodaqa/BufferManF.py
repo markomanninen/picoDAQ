@@ -9,17 +9,99 @@ process arguments in mac and windows environments.
 author: Marko Manninen <elonmedia@gmail.com>
 '''
 #
-from __future__ import print_function, division, unicode_literals
-from __future__ import absolute_import
+from __future__ import print_function, division, unicode_literals, absolute_import
 
-# - class BufferMan
 import numpy as np, sys, time, threading
-
-from multiprocessing import Queue, Process, Array
+from threading import Thread
+from multiprocessing.queues import Queue as QueueX
+from multiprocessing import Process, Array, Value, get_context
 from multiprocessing.sharedctypes import RawValue, RawArray
 
 from .mpBufManCntrl import *
 from .mpOsci import *
+
+class SharedCounter(object):
+    """ A synchronized shared counter.
+    The locking done by multiprocessing.Value ensures that only a single
+    process or thread may read or write the in-memory ctypes object. However,
+    in order to do n += 1, Python performs a read followed by a write, so a
+    second process may read the old value before the new one is written by the
+    first process. The solution is to use a multiprocessing.Lock to guarantee
+    the atomicity of the modifications to Value.
+    This class comes almost entirely from Eli Bendersky's blog:
+    http://eli.thegreenplace.net/2012/01/04/shared-counter-with-pythons-multiprocessing/
+    """
+
+    def __init__(self, n=0):
+        self.count = Value('i', n)
+
+    def increment(self, n=1):
+        """ Increment the counter by n (default = 1) """
+        with self.count.get_lock():
+            self.count.value += n
+
+    @property
+    def value(self):
+        """ Return the value of the counter """
+        return self.count.value
+
+
+class Queue(QueueX):
+    """ A portable implementation of multiprocessing.Queue.
+    Because of multithreading / multiprocessing semantics, Queue.qsize() may
+    raise the NotImplementedError exception on Unix platforms like Mac OS X
+    where sem_getvalue() is not implemented. This subclass addresses this
+    problem by using a synchronized shared counter (initialized to zero) and
+    increasing / decreasing its value every time the put() and get() methods
+    are called, respectively. This not only prevents NotImplementedError from
+    being raised, but also allows us to implement a reliable version of both
+    qsize() and empty().
+    Note the implementation of __getstate__ and __setstate__ which help to
+    serialize MyQueue when it is passed between processes. If these functions
+    are not defined, MyQueue cannot be serialized, which will lead to the error
+    of "AttributeError: 'MyQueue' object has no attribute 'size'".
+    See the answer provided here: https://stackoverflow.com/a/65513291/9723036
+    
+    For documentation of using __getstate__ and __setstate__ to serialize objects,
+    refer to here: https://docs.python.org/3/library/pickle.html#pickling-class-instances
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs, ctx=get_context())
+        self.size = SharedCounter(0)
+
+    def __getstate__(self):
+        """Help to make MyQueue instance serializable.
+        Note that we record the parent class state, which is the state of the
+        actual queue, and the size of the queue, which is the state of MyQueue.
+        self.size is a SharedCounter instance. It is itself serializable.
+        """
+        return {
+            'parent_state': super().__getstate__(),
+            'size': self.size,
+        }
+
+    def __setstate__(self, state):
+        super().__setstate__(state['parent_state'])
+        self.size = state['size']
+
+    def put(self, *args, **kwargs):
+        super().put(*args, **kwargs)
+        self.size.increment(1)
+
+    def get(self, *args, **kwargs):
+        item = super().get(*args, **kwargs)
+        self.size.increment(-1)
+        return item
+
+    def qsize(self):
+        """ Reliable implementation of multiprocessing.Queue.qsize() """
+        return self.size.value
+
+    def empty(self):
+        """ Reliable implementation of multiprocessing.Queue.empty() """
+        return not self.qsize()
+
 
 NBuffers  = 16   # number of buffers
 BMmodules = []   # display modules to start
@@ -51,11 +133,12 @@ readrate = RawValue('f', 0.) # current rate
 lifefrac = RawValue('f', 0.) # current life-time
 BMT0     = RawValue('d', 0.) # time of run-start
 
+STARTED = RawValue('b', 0)
 ACTIVE  = RawValue('b', 0)
 RUNNING = RawValue('b', 0)
-STOPPED = False
+STOPPED = RawValue('b', 0)
 
-# set up variables for Buffer Manager status and accounting
+# set up variables for buffer manager status and accounting
 tPause  = 0. # time when last paused
 dTPause = 0. # total time spent in paused state
 
@@ -66,17 +149,25 @@ request_Ques = []  # consumer request to manageDataBuffer
 consumer_Ques = [] # data from manageDataBuffer to consumer
 
 
-# keep track of sub-processes started by BufferManager
-procs     = [] # list of sub-processes started by BufferMan
-thrds     = [] # list of sub-processes started by BufferMan
+# keep track of sub-processes started by buffer manager
+procs     = [] # list of sub-processes started by buffer manager
+thrds     = [] # list of sub-processes started by buffer manager
 mpQues    = []
 logQ      = None
 prod_Que  = None
+kbdtxt    = ''
 
-runStarted = None
+TStop       = None
 BMIinterval = 1000.  # update interval in ms
+maxBMrate   = 450.
 start_manageDataBuffer = None
-TStop = None
+
+
+# 1st, remove pyhton 2 vs. python 3 incompatibility for keyboard input
+if sys.version_info[:2] <= (2,7):
+  get_input = raw_input
+else:
+  get_input = input
 
 
 def BufferMan(BMdict, DevConfArg):
@@ -114,16 +205,17 @@ def BufferMan(BMdict, DevConfArg):
   TSampling = DevConf.TSampling
   # function collecting data from hardware device
   rawDAQproducer = DevConf.acquireDataBM
-  # data structure for BufferManager in shared c-type memory
+  # data structure for buffer manager in shared c-type memory
   CBMbuf = RawArray('f', NBuffers * NChannels * NSamples)
-  CtimeStamp = RawArray('f', NBuffers )
-  CtrigStamp = RawArray('i', NBuffers )
+  CtimeStamp = RawArray('f', NBuffers)
+  CtrigStamp = RawArray('i', NBuffers)
   #  ... and map to numpy arrays
   BMbuf = np.frombuffer(CBMbuf, 'f').reshape(NBuffers, NChannels, NSamples)
   timeStamp = np.frombuffer(CtimeStamp, 'f')
   trigStamp = np.frombuffer(CtrigStamp, 'f')
   # queues ( multiprocessing Queues for communication with sub-processes)
-  prod_Que = Queue(NBuffers) # acquireData <-> manageDataBuffer
+  # acquireData <-> manageDataBuffer
+  prod_Que = Queue(NBuffers)
   # multiprocessing Queues for data transfer to subprocesses
   BMlock = threading.Lock()
 
@@ -144,7 +236,7 @@ def acquireData():
   '''
   global BMbuf, rawDAQproducer, Tlife, ACTIVE, verbose, RUNNING
   global timeStamp, trigStamp, Ttrig, Ntrig, prod_Que, NBuffers
-  prlog('*==* BufMan:  !!! acquireData starting')
+  prlog('*==* BufferManager.acquireData() starting')
   tlife = 0.
   ni = 0 # temporary variable
   ts = time.time()
@@ -154,23 +246,17 @@ def acquireData():
     ibufw = (ibufw + 1) % NBuffers # next write buffer
     while ibufw == ibufr.value:  # wait for consumer done with this buffer
       if not ACTIVE.value:
-        if verbose:
-          prlog ('*==* BufMan.acquireData()  ended')
-        return
+        return prlog('*==* BufferManager.acquireData() ended')
       time.sleep(0.0005)
     while not RUNNING.value:   # wait for running status
       if not ACTIVE.value:
-        if verbose:
-          prlog('*==* BufMan.acquireData()  ended')
-        return
+        return prlog('*==* BufferManager.acquireData() ended')
       time.sleep(0.01)
 
   # data acquisition from hardware
     e = rawDAQproducer(BMbuf[ibufw])
     if e == None:
-      if verbose:
-        prlog('*==* BufMan.acquireData()  ended')
-      return
+      return prlog('*==* BufferManager.acquireData() ended')
 
     ttrg, tl = e
     tlife += tl
@@ -185,9 +271,7 @@ def acquireData():
   # wait for free buffer
     while prod_Que.qsize() == NBuffers:
       if not ACTIVE.value:
-        if verbose:
-          prlog('*==* BufMan.acquireData()  ended')
-        return
+        return prlog('*==* BufferManager.acquireData() ended')
       time.sleep(0.0005)
 
   # calculate life time and read rate
@@ -200,21 +284,19 @@ def acquireData():
       ni = Ntrig.value
 
   # --- end while
-  if verbose:
-    prlog('*==* BufMan.acquireData()  ended')
+  prlog('*==* BufferManager.acquireData() ended')
 
 
-# -- the central Buffer Manager - runs as a thread or sub-process
 def manageDataBuffer():
-  '''main Consumer Thread
+  '''
+  main consumer runs as a thread or sub-process
 
-     - receive data from procuder (acquireData):
-     - provide all events for analysis to "obligatory" consumers
-     - provide subset of events to "random" consumers (picoVMeter, oscilloscope)
-
+  - receive data from procuder (acquireData):
+  - provide all events for analysis to "obligatory" consumers
+  - provide subset of events to "random" consumers (picoVMeter, oscilloscope)
   '''
   global ACTIVE, prod_Que, verbose, trigStamp, timeStamp, request_Ques
-  global BMbuf, mpQues, logTime
+  global BMbuf, mpQues, logTime, eibufr
   t0 = time.time()
   n0 = 0
   n = 0
@@ -222,9 +304,7 @@ def manageDataBuffer():
     # wait for pointer to data in producer queue
     while prod_Que.empty():
       if not ACTIVE.value:
-        if verbose:
-          prlog('*==* BufMan ended')
-        return
+        return prlog('*==* BufferManager.manageDataBuffer() ended 1')
       time.sleep(0.0005)
     ibufr.value = prod_Que.get()
     evNr = trigStamp[ibufr.value]
@@ -246,13 +326,11 @@ def manageDataBuffer():
           consumer_Ques[i].put((evNr, evTime, BMbuf[ibufr.value]))
           l_obligatory.append(i)
         else:
-          prlog('!=! manageDataBuffer: invalid request mode', req)
+          prlog('!=! BufferManager.manageDataBuffer() invalid request mode', req)
           sys.exit(1)
 
-    # provide data via a mp-Queue at lower priority
+    # provide data via multiprocessing queue at lower priority
     if len(mpQues):
-      # only if Buffer is not full
-      # if len(mpQues) and prod_Que.qsize() <= NBuffers/2 :
       for Q in mpQues:
         # put an event in the Queue
         if Q.empty():
@@ -268,9 +346,7 @@ def manageDataBuffer():
         if done:
           break
         if not ACTIVE.value:
-          if verbose:
-            prlog('*==* BufMan ended')
-          return
+          return prlog('*==* BufferManager.manageDataBuffer() ended 2')
         time.sleep(0.0005)
 
     #  signal to producer that all consumers are done with this event
@@ -280,65 +356,56 @@ def manageDataBuffer():
     n += 1
     if time.time() - t0 >= logTime:
       t0 = time.time()
-    if verbose:
-      prlog('evt %i:  rate: %.3gHz   life: %.2f%%' % (n, readrate.value, lifefrac.value))
+    prlog('evt %i:  rate: %.3gHz   life: %.2f%%' % (n, readrate.value, lifefrac.value))
     if evNr != n:
-      prlog("!!! manageDataBuffer error: ncnt != Ntrig: %i, %i" % (n, evNr))
-  # end while ACTIVE
-  if verbose:
-    prlog('*==* BufMan ended')
+      prlog("!!! BufferManager.manageDataBuffer() error: ncnt != Ntrig: %i, %i" % (n, evNr))
 
 
-# -- helper functions for interaction with BufferManager
 def BMregister():
   '''
-  register a client to Buffer Manager
+  register a client to buffer manager
 
-  Returns: client index
+  returns: client index
   '''
   global BMlock, request_Ques, consumer_Ques, verbose
-  BMlock.acquire() # called by many processes, needs protection ...
+  # called by many processes, needs protection...
+  BMlock.acquire()
   request_Ques.append(Queue(1))
   consumer_Ques.append(Queue(1))
   client_index = len(request_Ques) - 1
   BMlock.release()
-
-  if verbose:
-    prlog("*==* BMregister: new client id=%i" % client_index)
+  prlog("*==* BMregister: new client id=%i" % client_index)
   return client_index
 
 
-# multiprocessing Queue
 def BMregister_mpQ():
   '''
-  register a subprocess to Buffer Manager
+  register a subprocess to buffer manager
 
   copy of data will be transferred via a multiprocess Queue
 
-  Returns: client index
-           multiprocess Queue
+  returns: client index, multiprocess Queue
   '''
-  global mpQues, verbose
+  global mpQues
   mpQues.append(Queue(1))
   cid = len(mpQues) - 1
-
-  if verbose:
-    prlog("*==* BMregister_mpQ: new subprocess client id=%i" % cid)
-  return cid, mpQues[-1]
+  prlog("*==* BufferManager.BMregister_mpQ() new subprocess client id=%i" % cid)
+  return mpQues[-1]
 
 
-# -- encapsulates data access for obligatory and random clients
 def getEvent(client_index, mode = 1):
   '''
-  request event from Buffer Manager
+  request event from buffer manager
 
-    Arguments:
+  encapsulates data access for obligatory and random clients
 
-    client_index client:  index as returned by BMregister()
-    mode:   0: event pointer (olbigatory consumer)
-            1: copy of event data (random consumer)
-            2: copy of event (olbigatory consumer)
-    Returns: event data
+  Arguments:
+
+  client_index client:  index as returned by BMregister()
+  mode:   0: event pointer (olbigatory consumer)
+          1: copy of event data (random consumer)
+          2: copy of event (olbigatory consumer)
+  returns: event data
   '''
   global request_Ques, consumer_Ques, ACTIVE, trigStamp, timeStamp, BMbuf
 
@@ -349,115 +416,121 @@ def getEvent(client_index, mode = 1):
     if not ACTIVE.value:
       return
     time.sleep(0.0005)
-  prlog('*==* getEvent: received event %i' % evNr)
-  if mode != 0: # received copy of the event data
-    return cQ.get()
+  ibr = cQ.get()
+  prlog('*==* getEvent: received event %i' % trigStamp[ibr])
+  # received copy of the event data
+  if mode != 0:
+    return ibr
   # received pointer to event buffer
   else:
-    ibr = cQ.get()
     evNr = trigStamp[ibr]
     evTime = timeStamp[ibr]
     evData = BMbuf[ibr]
     return evNr, evTime, evData
 
 
-# Run control fuctions
-# set-up Buffer Manager processes
+def add_process(name, target, args = ()):
+  global procs
+  procs.append(Process(name = name, target = target, args = args))
+
+
+def start_processes():
+  global procs, verbose
+  for prc in procs:
+    prc.deamon = True
+    prc.start()
+    if verbose:
+      print('    BufferManager.start_processes() ', prc.name, ' PID =', prc.pid)
+
+
+def add_thread(name, target, args = ()):
+  global thrds
+  thrd = Thread(name = name, target = target, args = args)
+  thrd.daemon = True
+  thrd.start()
+  thrds.append(thrd)
+
+
 def start():
-  global verbose, ACTIVE, runStarted, start_manageDataBuffer
-  global logQ, procs, BMmodules, DevConf
-  if verbose > 1:
-    prlog('*==* BufferMan  starting acquisition threads')
+  '''
+  run control functions
+  set-up buffer manager processes
+  '''
+  global ACTIVE, STARTED, start_manageDataBuffer
+  global logQ, procs, BMmodules, DevConf, BMIinterval, maxBMrate
+  
+  prlog('*==* BufferManager.start() acquisition threads')
+
   ACTIVE.value = True
-  runStarted = False
+  STARTED.value = False
 
-  thr_acquireData = threading.Thread(target = acquireData)
-  thr_acquireData.setName('acquireData')
-  thr_acquireData.daemon = True
-  thr_acquireData.start()
-  thrds.append(thr_acquireData)
-  # test: try as sub-process
-  #  prc_acquireData=Process(name='acquireData', target=acquireData)
-  #  prc_cquireData.start()
-
-  #  thr_manageDataBuffer=threading.Thread(target=manageDataBuffer)
-  #  thr_manageDataBuffer.setName('manageDataBuffer')
-  #  thr_manageDataBuffer.daemon=True
-  #  thr_manageDataBuffer.start()
-
+  add_thread('acquireData', acquireData)
   # start manageDataBuffer as the last sub-process in run(),
-  #   connects daq producer and clients)
+  # connects daq producer and clients
   start_manageDataBuffer = True
 
-  # BufferMan Info and control always started
+  # buffer manager info and control always started
   logQ = Queue()
-  maxBMrate = 450.
-  #BMIinterval = 1000.  # update interval in ms
-  procs.append(
-    Process(name = 'BufManCntrl',
-            target = mpBufManCntrl,
-            args = (getBMCommandQue(), logQ,     getBMInfoQue(), maxBMrate, BMIinterval)))
-  #                 cmdQ               BM_logQue BM_InfoQue      max_rate   update_interval
+
+  add_process(
+    'mpBufManCntrl',
+    mpBufManCntrl,
+    (getBMCommandQue(), logQ, getBMInfoQue(), maxBMrate, BMIinterval))
 
   # waveform display
   if 'mpOsci' in BMmodules:
-    OScidx, OSmpQ = BMregister_mpQ()
-    procs.append(
-      Process(name = 'Osci',
-              target = mpOsci,
-              args = (OSmpQ, DevConf.OscConfDict, 100., 'event rate')))
-  #                                               interval
-  # start BufferMan background processes
-  for prc in procs:
-    # prc.deamon = True
-    prc.start()
-    if verbose:
-      print('    BufferMan: starting process ', prc.name, ' PID =', prc.pid)
+    OSmpQ = BMregister_mpQ()
+    add_process(
+      'mpOsci',
+      mpOsci,
+      (OSmpQ, DevConf.OscConfDict, 100., 'event rate'))
+  # start background processes
+  start_processes()
 
 
-# start run - this must not be started before all clients have registred
 def run():
-  global runStarted, start_manageDataBuffer, flog, LogFile, verbose, BMT0, procs, RUNNING
+  '''
+  start run - this must not be started before all clients have registred
+  '''
+  global STARTED, start_manageDataBuffer, flog, LogFile, verbose, BMT0, procs, RUNNING
   # start manageDataBuffer process and initialize run
-  if runStarted:
-    prlog('*==* run already started - do nothing')
-    return
+  if STARTED.value:
+    return prlog('*==* run already started - do nothing')
 
   tstart = time.time()
   if LogFile:
     datetime = time.strftime('%y%m%d-%H%M', time.localtime(tstart))
     flog = open(LogFile + '_' + datetime + '.log', 'w', 1)
 
-  if verbose:
-    prlog('*==* BufferMan T0')
+  prlog('*==* BufferManager.run() T0')
 
   BMT0.value = tstart
 
-  if verbose:
-    prlog('*==* BufferMan start running')
+  prlog('*==* BufferManager.run() running')
 
-  if start_manageDataBuffer: # delayed start of manageDataBuffer
+  # delayed start of manageDataBuffer
+  if start_manageDataBuffer:
     procs.append(Process(name = 'manageDataBuffer', target = manageDataBuffer))
     procs[-1].start()
     start_manageDataBuffer = False
     if verbose:
-      print('    BufferMan: starting process ', procs[-1].name, ' PID =', procs[-1].pid)
+      print('    BufferManager.run() process ', procs[-1].name, ' PID =', procs[-1].pid)
 
-  runStarted = True
+  STARTED.value = True
   RUNNING.value = True
 
 
-# pause data acquisition - RUNNING flag evaluated by raw data producer
 def pause():
+  '''
+  pause data acquisition - RUNNING flag evaluated by raw data producer
+  '''
   global tPause, RUNNING, STOPPED, verbose, readrate
   if not RUNNING.value:
-    print('*==* BufferMan: Pause command recieved, but not running')
-    return
-  if STOPPED:
-    print('*==* BufferMan: Pause from Stopped state not possible')
-    return
-  if verbose:
-    prlog('*==* BufferMan  pause')
+    return print('*==* BufferManager.pause() command recieved, but not running')
+  if STOPPED.value:
+    return print("\n", '*==* BufferManager.pause() from stopped state not possible', "\n")
+  
+  prlog('*==* BufferManager.pause()')
 
   RUNNING.value = False
   tPause = time.time()
@@ -466,16 +539,13 @@ def pause():
 
 # resume data acquisition
 def resume():
-  global tPause, dTPause, RUNNING, STOPPED, verbose, dTPause, tPause
+  global RUNNING, STOPPED, verbose, dTPause, tPause
   if RUNNING.value:
-    print('*==* BufferMan: Resume command recieved, but already running')
-    return
-  if STOPPED:
-    print('*==* BufferMan: Resume from Stopped state not possible')
-    return
+    return print('*==* BufferManager.resume() command recieved, but already running')
+  if STOPPED.value:
+    return print('*==* BBufferManager.resume() from Stopped state not possible')
 
-  if verbose:
-    prlog('*==* BufferMan  resume')
+  prlog('*==* BufferManager.resume()')
 
   RUNNING.value = True
   dTPause += (time.time() - tPause)
@@ -487,8 +557,11 @@ def setverbose(vlevel):
   verbose = vlevel
 
 
-# functions for Buffer Manager control
+
 def execCommand(c):
+  '''
+  functions for buffer manager keyboard control
+  '''
   if c == 'P':
     pause()
   elif c == 'R':
@@ -499,32 +572,25 @@ def execCommand(c):
     end()
 
 
-def kbdin():
+def keyboardInput():
   '''
-    read keyboard input, run as backround-thread to aviod blocking
+  read keyboard input, run as backround-thread to avoid blocking
   '''
-  global ACTIVE
-  # 1st, remove pyhton 2 vs. python 3 incompatibility for keyboard input
-  if sys.version_info[:2] <= (2,7):
-    get_input = raw_input
-  else:
-    get_input = input
+  global ACTIVE, kbdtxt
   # keyboard input as thread
   while ACTIVE.value:
-    kbdtxt = get_input(30 * ' ' + 'type -> E(nd), P(ause), S(top) or R(esume) + <ret> ')
+    kbdtxt = get_input(20 * ' ' + 'type -> E(nd), P(ause), S(top) or R(esume) + <ret> ')
 
 
 def kbdCntrl():
   '''
-    Control Buffer Manager via keyboard (stdin)
+  control buffer manager via keyboard (stdin)
   '''
-  global ACTIVE
+  global ACTIVE, kbdtxt
+
   kbdtxt = ''
-  # set up a thread to read from keyboad without blocking
-  kbd_thrd = threading.Thread(target = kbdin)
-  kbd_thrd.daemon = True
-  kbd_thrd.start()
-  thrds.append(kbd_thrd)
+
+  add_thread('keyboardInput', keyboardInput)
 
   while ACTIVE.value:
     if len(kbdtxt):
@@ -535,8 +601,10 @@ def kbdCntrl():
 
 
 def readCommands_frQ(cmdQ):
+  '''
+  a thread to receive control commands via multiprocessing queue
+  '''
   global ACTIVE
-  # a thread to receive control commands via a mp-Queue
   while ACTIVE.value:
     cmd = cmdQ.get()
     execCommand(cmd)
@@ -544,91 +612,78 @@ def readCommands_frQ(cmdQ):
 
 
 def getBMCommandQue():
-  '''multiprocessing Queue for commands
-
-     starts a background process to read BMCommandQue
-
-     Returns: multiprocess Queue
   '''
-  global verbose
+  multiprocessing queue for commands
+
+  starts a background process to read BMCommandQue
+
+  returns: multiprocessing queue
+  '''
   BMCommandQue = Queue(1)
-  # start a background thread for reporting
-  thr_BMCommandQ = threading.Thread(target = readCommands_frQ, args = (BMCommandQue,)  )
-  thr_BMCommandQ.daemon = True
-  thr_BMCommandQ.setName('BMreadCommand')
-  thr_BMCommandQ.start()
-  thrds.append(thr_BMCommandQ)
-
-  if verbose:
-    prlog("*==* BMCommandQue enabled")
-
+  add_thread('BMreadCommand', readCommands_frQ, (BMCommandQue,))
+  prlog("*==* BMCommandQue enabled")
   return BMCommandQue
 
 
 # collect status information - actual and integrated
 def getStatus():
-  ''' Returns:
-      tuple: Running status, number of events,
-         time of last event, rate, life fraction and buffer level
+  '''
+  returns tuple:
+  running status, number of events,
+  time of last event, rate, life fraction and buffer level
   '''
   global tPause, dTPause, RUNNING, prod_Que, NBuffers, BMT0
   global Ntrig, Ttrig, Tlife, readrate, lifefrac
   bL = (prod_Que.qsize() * 100) / NBuffers
-  stat = RUNNING.value
   if tPause != 0.:
     t = tPause
   else:
     t = time.time()
-  return (stat, t - BMT0.value - dTPause,
+  return (RUNNING.value, t - BMT0.value - dTPause,
           Ntrig.value, Ttrig.value, Tlife.value,
           readrate.value, lifefrac.value, bL)
 
 
-# mp-Qeueu for information, starts getStatus as thread
 def getBMInfoQue():
-  '''multiprocessing Queue for status information
-
-     starts a background process to fill BMInfoQue
-
-     Returns: multiprocess Queue
   '''
-  global verbose
-  BMInfoQue = Queue(1)
-  # start a background thread for reporting
-  thr_BMInfoQ = threading.Thread(target = reportStatus, args = (BMInfoQue,))
-  thr_BMInfoQ.daemon = True
-  thr_BMInfoQ.setName('BMreportStatus')
-  thr_BMInfoQ.start()
-  thrds.append(thr_BMInfoQ)
+  multiprocessing queue for status information
+  
+  starts a background process to fill BMInfoQue
 
-  if verbose:
-    prlog("*==* BMInfoQue enabled")
+  returns: multiprocess queue
+  '''
+  BMInfoQue = Queue(1)
+  add_thread('BMreportStatus', reportStatus, (BMInfoQue,))
+  prlog("*==* BMInfoQue enabled")
   return BMInfoQue
 
 
 def reportStatus(Q):
-  '''report Buffer manager staus to a multiprocessing Queue'''
+  ''' report buffer manager status to a multiprocessing queue '''
   global STOPPED, prod_Que, BMIinterval
-  while not STOPPED:
+  while not STOPPED.value:
     if Q is not None and Q.empty() and prod_Que is not None:
       Q.put(getStatus())
-    time.sleep(BMIinterval / 2000.) # ! convert from ms to s
+    # onvert from milliseconds to seconds
+    time.sleep(BMIinterval / 2000.)
 
 
 def prlog(m):
-  ''' send a Message, to screen or to LogQ'''
-  global dTPause, flog, BMT0, logQ
-  t = time.time() - BMT0.value # add time stamp to message
-  s = '%.2f ' % (t) + m
-  if logQ is None:
-    print(s)
-  else:
-    if logQ.empty():
-      logQ.put(s)
-    else:
+  ''' send a Message to screen, log queue, or file '''
+  global flog, BMT0, logQ, verbose
+  
+  if verbose:
+    # add time stamp to message
+    t = time.time() - BMT0.value
+    s = '%.2f ' % (t) + m
+    if logQ is None or not logQ.empty():
       print(s)
-  if flog != None:
-    print(s, file = flog)
+    # is empty logQ
+    else:
+        logQ.put(s)
+    # file log
+    if flog != None:
+      print(s, file = flog)
 
 
 # prints end-of-run summary
@@ -637,47 +692,55 @@ def print_summary():
   datetime = time.strftime('%y%m%d-%H%M', time.localtime(BMT0.value))
   if flog == None:
     flog = open('BMsummary_' + datetime + '.sum', 'w')
-  prlog('Run Summary: started ' + datetime)
-  prlog('  Trun=%.1fs  Ntrig=%i  Tlife=%.1fs\n' % (TStop - BMT0.value - dTPause, Ntrig.value, Tlife.value))
+
+  print('')
+  prlog('*==* BufferManager.print_summary()')
+  print('')
+  prlog('Trun=%.1fs  Ntrig=%i  Tlife=%.1fs\n' % (TStop - BMT0.value - dTPause, Ntrig.value, Tlife.value))
+
   flog.close()
   flog = None
 
 
-# put run in "stopped state" - BM processes remain active, no resume possible
 def stop():
-  global BMT0, Ntrig, TStop, Tlife, tPause, dTPause, ACTIVE, RUNNING, STOPPED, procs, verbose
+  '''
+  put run in "stopped state" - BM processes remain active, no resume possible
+  '''
+  global BMT0, Ntrig, TStop, Tlife, tPause, dTPause, ACTIVE, RUNNING, STOPPED, verbose
+
   if not ACTIVE.value:
-    print('*==* BufferMan: Stop command recieved, but not running')
-    return
+    return print('*==* BufferManager.stop command recieved, but not running')
 
   if tPause != 0. :  # stopping from paused state
     dTPause += (time.time() - tPause)
+
   if RUNNING.value:
     pause()
+
   tPause = 0.
 
   TStop = time.time()
-  STOPPED = True
-
+  STOPPED.value = True
   time.sleep(1.) # allow all events to propagate
 
-  if verbose:
-    prlog('*==* BufferMan ending - reached stopped state')
+  prlog('*==* BufferManager.stop() reached stopped state')
 
   print_summary()
 
   if verbose:
-    print('\n *==* BufferMan ending, RunSummary written')
+    print('\n *==* BufferManager.stop() summary written')
     print('  Run Summary: Trun=%.1fs  Ntrig=%i  Tlife=%.1fs\n' % (TStop - BMT0.value - dTPause, Ntrig.value, Tlife.value))
 
 
-# end BufferManager, stop all processes
-# ACTIVE flag observed by all sub-processes
 def end():
+  '''
+  end BufferManager, stop all processes
+  ACTIVE flag observed by all sub-processes
+  '''
   global ACTIVE, RUNNING, procs, verbose
+
   if not ACTIVE.value:
-    print('*==* BufferMan: End command recieved, but not active')
-    return
+    return print('*==* BufferManager.end() command recieved, but not active')
 
   if RUNNING.value: # ending from RUNNING state, stop first
     stop()
@@ -688,7 +751,7 @@ def end():
   # stop all sub-processes
   for prc in procs:
     if verbose:
-      print('  BufferMan: terminating ' + prc.name)
+      print('  BufferManager.end() terminating ' + prc.name)
     prc.terminate()
   time.sleep(0.3)
 
