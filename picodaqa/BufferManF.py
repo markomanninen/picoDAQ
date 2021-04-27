@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 '''
-BufferMan module for picoDAQ
+Buffer manager module for picoDAQ
 
-Function based implementation instead of original class implementation.
+Function based implementation instead of the original class implementation.
 This is due to restriction of using complicated class objects as multi-threaded
-process arguments in mac and windows environments.
+process arguments in mac and windows environments. Note that also Python modules
+are not approriate for windows processes, so also the usage of the buffer manager
+instances must be changed to that they are not used as arguments in process/thread.
 
-author: Marko Manninen <elonmedia@gmail.com>
+Author: Marko Manninen <elonmedia@gmail.com>
 '''
 #
 from __future__ import print_function, division, unicode_literals, absolute_import
@@ -21,7 +23,9 @@ from .mpBufManCntrl import *
 from .mpOsci import *
 
 class SharedCounter(object):
-    """ A synchronized shared counter.
+    """
+    A synchronized shared counter
+
     The locking done by multiprocessing.Value ensures that only a single
     process or thread may read or write the in-memory ctypes object. However,
     in order to do n += 1, Python performs a read followed by a write, so a
@@ -47,7 +51,9 @@ class SharedCounter(object):
 
 
 class Queue(QueueX):
-    """ A portable implementation of multiprocessing.Queue.
+    """
+    A portable implementation of multiprocessing.Queue
+
     Because of multithreading / multiprocessing semantics, Queue.qsize() may
     raise the NotImplementedError exception on Unix platforms like Mac OS X
     where sem_getvalue() is not implemented. This subclass addresses this
@@ -56,12 +62,13 @@ class Queue(QueueX):
     are called, respectively. This not only prevents NotImplementedError from
     being raised, but also allows us to implement a reliable version of both
     qsize() and empty().
+
     Note the implementation of __getstate__ and __setstate__ which help to
-    serialize MyQueue when it is passed between processes. If these functions
+    serialize Queue when it is passed between processes. If these functions
     are not defined, MyQueue cannot be serialized, which will lead to the error
-    of "AttributeError: 'MyQueue' object has no attribute 'size'".
+    of "AttributeError: 'Queue' object has no attribute 'size'".
     See the answer provided here: https://stackoverflow.com/a/65513291/9723036
-    
+
     For documentation of using __getstate__ and __setstate__ to serialize objects,
     refer to here: https://docs.python.org/3/library/pickle.html#pickling-class-instances
     """
@@ -71,14 +78,16 @@ class Queue(QueueX):
         self.size = SharedCounter(0)
 
     def __getstate__(self):
-        """Help to make MyQueue instance serializable.
+        """
+        Help to make MyQueue instance serializable
+
         Note that we record the parent class state, which is the state of the
-        actual queue, and the size of the queue, which is the state of MyQueue.
+        actual queue, and the size of the queue, which is the state of Queue.
         self.size is a SharedCounter instance. It is itself serializable.
         """
         return {
             'parent_state': super().__getstate__(),
-            'size': self.size,
+            'size': self.size
         }
 
     def __setstate__(self, state):
@@ -103,14 +112,15 @@ class Queue(QueueX):
         return not self.qsize()
 
 
+verbose   = 1    # print detailed info if 1, 0 to print less info
+
 NBuffers  = 16   # number of buffers
 BMmodules = []   # display modules to start
-LogFile   = None
+LogFile   = None # log file name
 flog      = None # file not yet open
-verbose   = 1    # print detailed info if 1, 0 to print less info
 logTime   = 60   # time between logging entries, once per 60 sec
 
-DevConf   = None
+DevConf   = None # picoscope device configuration
 NChannels = None # number of channels in use
 NSamples  = None # number of samples
 TSampling = None # sampling interval
@@ -123,6 +133,7 @@ CtrigStamp = None
 BMbuf      = None
 timeStamp  = None
 trigStamp  = None
+BMlock     = None
 
 # global variables for producer statistics
 ibufr    = RawValue('i', -1) # read index, synchronization with producer
@@ -141,25 +152,26 @@ STOPPED = RawValue('b', 0)
 # set up variables for buffer manager status and accounting
 tPause  = 0. # time when last paused
 dTPause = 0. # total time spent in paused state
+tStop   = 0. # time when buffer manager is stopped
 
-request_Ques = []  # consumer request to manageDataBuffer
-           # 0:  request event pointer, obligatory consumer
-           # 1:  request event data, random consumer
-           # 2:  request event data, obligatoray consumer
-consumer_Ques = [] # data from manageDataBuffer to consumer
-
+# consumer request to manageDataBuffer
+# 0:  request event pointer, obligatory consumer
+# 1:  request event data, random consumer
+# 2:  request event data, obligatoray consumer
+request_Ques = []
+# data from manageDataBuffer to consumer
+consumer_Ques = []
 
 # keep track of sub-processes started by buffer manager
-procs     = [] # list of sub-processes started by buffer manager
-thrds     = [] # list of sub-processes started by buffer manager
+procs     = []
+thrds     = []
 mpQues    = []
 logQ      = None
 prod_Que  = None
 kbdtxt    = ''
 
-TStop       = None
-BMIinterval = 1000.  # update interval in ms
-maxBMrate   = 450.
+BMIinterval = 1000. # update interval in ms
+maxBMrate   = 450.  # maximum buffer manager rate
 start_manageDataBuffer = None
 
 
@@ -209,7 +221,7 @@ def BufferMan(BMdict, DevConfArg):
   CBMbuf = RawArray('f', NBuffers * NChannels * NSamples)
   CtimeStamp = RawArray('f', NBuffers)
   CtrigStamp = RawArray('i', NBuffers)
-  #  ... and map to numpy arrays
+  # map to numpy arrays
   BMbuf = np.frombuffer(CBMbuf, 'f').reshape(NBuffers, NChannels, NSamples)
   timeStamp = np.frombuffer(CtimeStamp, 'f')
   trigStamp = np.frombuffer(CtrigStamp, 'f')
@@ -221,39 +233,45 @@ def BufferMan(BMdict, DevConfArg):
 
 
 # -- the raw data procuder
-#   must run as a thread in the same process that initialized the hardware device
+#
 def acquireData():
   '''
-   Procucer Thread
+  raw data procucer thread
 
-     - collects and stores data in buffers
-     - provides all acquired data to manageDataBufer
-     - count number of events and calculate life time
+  must run as a thread in the same process that initialized the hardware device
 
-     Arg: funtion handling data acquisition from device
+  - collects and stores data in buffers
+  - provides all acquired data to manageDataBufer
+  - count number of events and calculate life time
+
+  Arg: funtion handling data acquisition from device
 
   Communicates with consumer via multiprocessing.Queue()
   '''
   global BMbuf, rawDAQproducer, Tlife, ACTIVE, verbose, RUNNING
-  global timeStamp, trigStamp, Ttrig, Ntrig, prod_Que, NBuffers
+  global timeStamp, trigStamp, Ttrig, Ntrig, prod_Que, NBuffers, ibufr
   prlog('*==* BufferManager.acquireData() starting')
   tlife = 0.
-  ni = 0 # temporary variable
+  # temporary variable
+  ni = 0
   ts = time.time()
-  ibufw = -1   # buffer index
+  # buffer index
+  ibufw = -1
   while ACTIVE.value:
-  # sample data from Picoscope handled by instance ps
+    # sample data from Picoscope handled by instance ps
     ibufw = (ibufw + 1) % NBuffers # next write buffer
-    while ibufw == ibufr.value:  # wait for consumer done with this buffer
+    # wait for consumer done with this buffer
+    while ibufw == ibufr.value:
       if not ACTIVE.value:
         return prlog('*==* BufferManager.acquireData() ended')
       time.sleep(0.0005)
-    while not RUNNING.value:   # wait for running status
+    # wait for running status
+    while not RUNNING.value:
       if not ACTIVE.value:
         return prlog('*==* BufferManager.acquireData() ended')
       time.sleep(0.01)
 
-  # data acquisition from hardware
+    # data acquisition from hardware
     e = rawDAQproducer(BMbuf[ibufw])
     if e == None:
       return prlog('*==* BufferManager.acquireData() ended')
@@ -262,19 +280,20 @@ def acquireData():
     tlife += tl
     Tlife.value += tl
     ttrg -= BMT0.value
-    timeStamp[ibufw] = ttrg  # store time when data became ready
+    # store time when data became ready
+    timeStamp[ibufw] = ttrg
     Ttrig.value = ttrg
     Ntrig.value += 1
     trigStamp[ibufw] = Ntrig.value
     prod_Que.put(ibufw)
 
-  # wait for free buffer
+    # wait for free buffer
     while prod_Que.qsize() == NBuffers:
       if not ACTIVE.value:
         return prlog('*==* BufferManager.acquireData() ended')
       time.sleep(0.0005)
 
-  # calculate life time and read rate
+    # calculate life time and read rate
     if (Ntrig.value - ni) == 10:
       dt = time.time() - ts
       ts += dt
@@ -282,7 +301,6 @@ def acquireData():
       lifefrac.value = (tlife / dt) * 100.
       tlife = 0.
       ni = Ntrig.value
-
   # --- end while
   prlog('*==* BufferManager.acquireData() ended')
 
@@ -296,7 +314,7 @@ def manageDataBuffer():
   - provide subset of events to "random" consumers (picoVMeter, oscilloscope)
   '''
   global ACTIVE, prod_Que, verbose, trigStamp, timeStamp, request_Ques
-  global BMbuf, mpQues, logTime, eibufr
+  global BMbuf, mpQues, logTime, ibufr
   t0 = time.time()
   n0 = 0
   n = 0
@@ -310,19 +328,22 @@ def manageDataBuffer():
     evNr = trigStamp[ibufr.value]
     evTime = timeStamp[ibufr.value]
 
-  # check if other threads or sup-processes request data
-  #   next request treated as "done" for obligatory consumers
+    # check if other threads or sup-processes request data
+    # next request treated as "done" for obligatory consumers
     l_obligatory = []
     if len(request_Ques):
       for i, Q in enumerate(request_Ques):
         if not Q.empty():
           req = Q.get()
-        if req == 0: # return poiner to Buffer
+        # return pointer to buffer
+        if req == 0:
           consumer_Ques[i].put(ibufr.value)
           l_obligatory.append(i)
-        elif req == 1: # return a copy of data
+        # return a copy of data
+        elif req == 1:
           consumer_Ques[i].put((evNr, evTime, BMbuf[ibufr.value]))
-        elif req == 2: # return copy and mark as obligatory
+        # return copy and mark as obligatory
+        elif req == 2:
           consumer_Ques[i].put((evNr, evTime, BMbuf[ibufr.value]))
           l_obligatory.append(i)
         else:
@@ -349,7 +370,7 @@ def manageDataBuffer():
           return prlog('*==* BufferManager.manageDataBuffer() ended 2')
         time.sleep(0.0005)
 
-    #  signal to producer that all consumers are done with this event
+    # signal to producer that all consumers are done with this event
     ibufr.value = -1
 
     # print event rate
@@ -367,7 +388,7 @@ def BMregister():
 
   returns: client index
   '''
-  global BMlock, request_Ques, consumer_Ques, verbose
+  global BMlock, request_Ques, consumer_Ques
   # called by many processes, needs protection...
   BMlock.acquire()
   request_Ques.append(Queue(1))
@@ -401,7 +422,7 @@ def getEvent(client_index, mode = 1):
 
   Arguments:
 
-  client_index client:  index as returned by BMregister()
+  client_index:  index as returned by BMregister()
   mode:   0: event pointer (olbigatory consumer)
           1: copy of event data (random consumer)
           2: copy of event (olbigatory consumer)
@@ -411,7 +432,7 @@ def getEvent(client_index, mode = 1):
 
   request_Ques[client_index].put(mode)
   cQ = consumer_Ques[client_index]
-  
+
   while cQ.empty():
     if not ACTIVE.value:
       return
@@ -437,10 +458,10 @@ def add_process(name, target, args = ()):
 def start_processes():
   global procs, verbose
   for prc in procs:
-    prc.deamon = True
+    prc.daemon = True
     prc.start()
     if verbose:
-      print('    BufferManager.start_processes() ', prc.name, ' PID =', prc.pid)
+      print('     BufferManager.start_processes() ', prc.name, ' PID=', prc.pid)
 
 
 def add_thread(name, target, args = ()):
@@ -452,13 +473,10 @@ def add_thread(name, target, args = ()):
 
 
 def start():
-  '''
-  run control functions
-  set-up buffer manager processes
-  '''
+  ''' set-up buffer manager processes '''
   global ACTIVE, STARTED, start_manageDataBuffer
   global logQ, procs, BMmodules, DevConf, BMIinterval, maxBMrate
-  
+
   prlog('*==* BufferManager.start() acquisition threads')
 
   ACTIVE.value = True
@@ -489,9 +507,7 @@ def start():
 
 
 def run():
-  '''
-  start run - this must not be started before all clients have registred
-  '''
+  ''' start run - this must not be started before all clients have registered '''
   global STARTED, start_manageDataBuffer, flog, LogFile, verbose, BMT0, procs, RUNNING
   # start manageDataBuffer process and initialize run
   if STARTED.value:
@@ -514,22 +530,20 @@ def run():
     procs[-1].start()
     start_manageDataBuffer = False
     if verbose:
-      print('    BufferManager.run() process ', procs[-1].name, ' PID =', procs[-1].pid)
+      print('     BufferManager.run() process ', procs[-1].name, ' PID=', procs[-1].pid)
 
   STARTED.value = True
   RUNNING.value = True
 
 
 def pause():
-  '''
-  pause data acquisition - RUNNING flag evaluated by raw data producer
-  '''
+  ''' pause data acquisition - RUNNING flag evaluated by raw data producer '''
   global tPause, RUNNING, STOPPED, verbose, readrate
   if not RUNNING.value:
     return print('*==* BufferManager.pause() command recieved, but not running')
   if STOPPED.value:
-    return print("\n", '*==* BufferManager.pause() from stopped state not possible', "\n")
-  
+    return print('*==* BufferManager.pause() from stopped state not possible')
+
   prlog('*==* BufferManager.pause()')
 
   RUNNING.value = False
@@ -537,13 +551,14 @@ def pause():
   readrate.value = 0.
 
 
-# resume data acquisition
 def resume():
+  ''' resume data acquisition '''
   global RUNNING, STOPPED, verbose, dTPause, tPause
+
   if RUNNING.value:
     return print('*==* BufferManager.resume() command recieved, but already running')
   if STOPPED.value:
-    return print('*==* BBufferManager.resume() from Stopped state not possible')
+    return print('*==* BufferManager.resume() from Stopped state not possible')
 
   prlog('*==* BufferManager.resume()')
 
@@ -557,11 +572,8 @@ def setverbose(vlevel):
   verbose = vlevel
 
 
-
 def execCommand(c):
-  '''
-  functions for buffer manager keyboard control
-  '''
+  ''' functions for buffer manager keyboard control '''
   if c == 'P':
     pause()
   elif c == 'R':
@@ -573,23 +585,17 @@ def execCommand(c):
 
 
 def keyboardInput():
-  '''
-  read keyboard input, run as backround-thread to avoid blocking
-  '''
+  ''' read keyboard input as thread, run in backround to avoid blocking '''
   global ACTIVE, kbdtxt
-  # keyboard input as thread
   while ACTIVE.value:
     kbdtxt = get_input(20 * ' ' + 'type -> E(nd), P(ause), S(top) or R(esume) + <ret> ')
 
 
 def kbdCntrl():
-  '''
-  control buffer manager via keyboard (stdin)
-  '''
+  ''' control buffer manager via keyboard (stdin) '''
   global ACTIVE, kbdtxt
 
   kbdtxt = ''
-
   add_thread('keyboardInput', keyboardInput)
 
   while ACTIVE.value:
@@ -601,9 +607,7 @@ def kbdCntrl():
 
 
 def readCommands_frQ(cmdQ):
-  '''
-  a thread to receive control commands via multiprocessing queue
-  '''
+  ''' a thread to receive control commands via multiprocessing queue '''
   global ACTIVE
   while ACTIVE.value:
     cmd = cmdQ.get()
@@ -625,12 +629,13 @@ def getBMCommandQue():
   return BMCommandQue
 
 
-# collect status information - actual and integrated
 def getStatus():
   '''
+  collect status information - actual and integrated
+
   returns tuple:
-  running status, number of events,
-  time of last event, rate, life fraction and buffer level
+    running status, number of events,
+    time of last event, rate, life fraction and buffer level
   '''
   global tPause, dTPause, RUNNING, prod_Que, NBuffers, BMT0
   global Ntrig, Ttrig, Tlife, readrate, lifefrac
@@ -647,7 +652,7 @@ def getStatus():
 def getBMInfoQue():
   '''
   multiprocessing queue for status information
-  
+
   starts a background process to fill BMInfoQue
 
   returns: multiprocess queue
@@ -669,9 +674,9 @@ def reportStatus(Q):
 
 
 def prlog(m):
-  ''' send a Message to screen, log queue, or file '''
+  ''' send a message to screen, log queue, or file '''
   global flog, BMT0, logQ, verbose
-  
+
   if verbose:
     # add time stamp to message
     t = time.time() - BMT0.value
@@ -686,9 +691,9 @@ def prlog(m):
       print(s, file = flog)
 
 
-# prints end-of-run summary
 def print_summary():
-  global flog, TStop, BMT0, dTPause, Ntrig, Tlife
+  ''' prints end-of-run summary '''
+  global flog, tStop, BMT0, dTPause, Ntrig, Tlife
   datetime = time.strftime('%y%m%d-%H%M', time.localtime(BMT0.value))
   if flog == None:
     flog = open('BMsummary_' + datetime + '.sum', 'w')
@@ -696,7 +701,7 @@ def print_summary():
   print('')
   prlog('*==* BufferManager.print_summary()')
   print('')
-  prlog('Trun=%.1fs  Ntrig=%i  Tlife=%.1fs\n' % (TStop - BMT0.value - dTPause, Ntrig.value, Tlife.value))
+  prlog('Trun=%.1fs  Ntrig=%i  Tlife=%.1fs\n' % (tStop - BMT0.value - dTPause, Ntrig.value, Tlife.value))
 
   flog.close()
   flog = None
@@ -706,22 +711,23 @@ def stop():
   '''
   put run in "stopped state" - BM processes remain active, no resume possible
   '''
-  global BMT0, Ntrig, TStop, Tlife, tPause, dTPause, ACTIVE, RUNNING, STOPPED, verbose
+  global BMT0, Ntrig, tStop, Tlife, tPause, dTPause, ACTIVE, RUNNING, STOPPED, verbose
 
   if not ACTIVE.value:
-    return print('*==* BufferManager.stop command recieved, but not running')
+    return print('*==* BufferManager.stop() command recieved, but not running')
 
-  if tPause != 0. :  # stopping from paused state
+  # stopping from paused state
+  if tPause != 0.:
     dTPause += (time.time() - tPause)
 
   if RUNNING.value:
     pause()
 
   tPause = 0.
-
-  TStop = time.time()
+  tStop = time.time()
   STOPPED.value = True
-  time.sleep(1.) # allow all events to propagate
+  # allow all events to propagate
+  time.sleep(1.)
 
   prlog('*==* BufferManager.stop() reached stopped state')
 
@@ -729,7 +735,7 @@ def stop():
 
   if verbose:
     print('\n *==* BufferManager.stop() summary written')
-    print('  Run Summary: Trun=%.1fs  Ntrig=%i  Tlife=%.1fs\n' % (TStop - BMT0.value - dTPause, Ntrig.value, Tlife.value))
+    print('     Run Summary: Trun=%.1fs  Ntrig=%i  Tlife=%.1fs\n' % (tStop - BMT0.value - dTPause, Ntrig.value, Tlife.value))
 
 
 def end():
@@ -741,8 +747,8 @@ def end():
 
   if not ACTIVE.value:
     return print('*==* BufferManager.end() command recieved, but not active')
-
-  if RUNNING.value: # ending from RUNNING state, stop first
+  # ending from RUNNING state, stop first
+  if RUNNING.value:
     stop()
 
   ACTIVE.value = False
@@ -751,7 +757,7 @@ def end():
   # stop all sub-processes
   for prc in procs:
     if verbose:
-      print('  BufferManager.end() terminating ' + prc.name)
+      print('     BufferManager.end() terminating ' + prc.name)
     prc.terminate()
   time.sleep(0.3)
 
