@@ -2,20 +2,19 @@
 
 '''Oscilloscope display in TKinter window'''
 
-from __future__ import division
-from __future__ import absolute_import
-from __future__ import print_function
-from __future__ import unicode_literals
+from __future__ import division, absolute_import, print_function, unicode_literals
 
 import sys, numpy as np
 
 import matplotlib
 matplotlib.use('TkAgg')
+
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 if sys.version_info[0] < 3:
   import Tkinter as Tk
 else:
   import tkinter as Tk
+
 import matplotlib.pyplot as plt, matplotlib.animation as anim
 
 # import Oscilloscope class
@@ -37,7 +36,7 @@ def mpOsci(Q, conf, interval = 50., name='event rate'):
     try:
       while True:
         evNr, evTime, evData = Q.get()
-        #print('*==* yieldEvt_fromQ: received event %i' % evNr)
+        print('*==* yieldEvt_fromQ: received event %i' % evNr)
         cnt+=1
         evt = (cnt, evNr, evTime, evData)
         yield evt
@@ -45,7 +44,7 @@ def mpOsci(Q, conf, interval = 50., name='event rate'):
       print('*==* yieldEvt_fromQ: termination signal received')
   
 # ------- executable part -------- 
-#  print(' -> mpOsci starting')
+  print(' -> mpOsci starting')
 
   try:
 

@@ -2,14 +2,14 @@
 
 '''effective Voltage and signal history in TKinter window'''
 
-from __future__ import print_function, division, unicode_literals
-from __future__ import absolute_import
+from __future__ import print_function, division, unicode_literals, absolute_import
 
 import sys, time, numpy as np
-
 import matplotlib
 matplotlib.use('TkAgg')
+
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
 if sys.version_info[0] < 3:
   import Tkinter as Tk
   import tkMessageBox as mbox

@@ -2,8 +2,7 @@
 
 '''Text display in TKinter window'''
 
-from __future__ import print_function, division, unicode_literals
-from __future__ import absolute_import
+from __future__ import print_function, division, unicode_literals, absolute_import
 
 import sys, time, numpy as np
 import threading, multiprocessing as mp
@@ -137,7 +136,7 @@ def mpBufManCntrl(Qcmd, Qlog, Qinfo, maxRate = 100. , interval = 1000.):
 # start an update-process for logging information as thread
 #    print("starting update thread")
     wrthread = threading.Thread(target=wrtoLog,
-                              args=(T, ) ) 
+                                args=(T, ) ) 
     wrthread.daemon = True
     wrthread.start()
 

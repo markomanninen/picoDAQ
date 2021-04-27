@@ -63,7 +63,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
 # start subprocess(es)
   for prc in procs:
-    prc.deamon = True
+    prc.daemon = True
     prc.start()
     print(' -> starting process ', prc.name, ' PID=', prc.pid)
 
@@ -71,7 +71,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   # start threads
   for thrd in thrds:
     print(' -> starting thread ', thrd.name)
-    thrd.deamon = True
+    thrd.daemon = True
     thrd.start()
 
   DAQ_ACTIVE = True  # Data Acquisition active

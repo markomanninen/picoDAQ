@@ -7,8 +7,7 @@ This script reads data from PicoScope and displays them in oscilloscope mode
 Usage: ./runOsci.py [<Oscilloscpope_config>.yaml]
 '''
 
-from __future__ import print_function, division, unicode_literals
-from __future__ import absolute_import
+from __future__ import print_function, division, unicode_literals, absolute_import
 
 import sys, time, yaml, numpy as np, threading, multiprocessing as mp
 
@@ -57,7 +56,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
   # start subprocess(es)
   for prc in procs:
-    prc.deamon = True
+    prc.daemon = True
     prc.start()
     print(' -> starting process ', prc.name, ' PID=', prc.pid)
 
@@ -65,7 +64,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   # start threads
   for thrd in thrds:
     print(' -> starting thread ', thrd.name)
-    thrd.deamon = True
+    thrd.daemon = True
     thrd.start()
 
   DAQ_ACTIVE = True  # Data Acquisition active
