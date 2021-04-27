@@ -74,10 +74,9 @@ def obligConsumer(cId):
   global BM
   if not BM.ACTIVE.value:
     sys.exit(1)
-# register with Buffer Manager
-  mode = 0    # obligatory consumer, data in evdata transferred as pointer
-
-  evcnt=0
+  # obligatory consumer, data in evdata transferred as pointer
+  mode = 0
+  evcnt = 0
   while BM.ACTIVE.value:
     e = BM.getEvent(cId, mode = mode)
     if e != None:
@@ -85,65 +84,60 @@ def obligConsumer(cId):
       evcnt += 1
       print('*==* obligConsumer: event Nr %i, %i events seen' % (evNr, evcnt))
 
-#    introduce random wait time to mimick processing activity
-    time.sleep(-0.25 * np.log(np.random.uniform(0.,1.)) )
+    # introduce random wait time to mimick processing activity
+    time.sleep(-0.25 * np.log(np.random.uniform(0., 1.)))
   return
-#-end def obligComsumer
 
 def randConsumer(cId):
   '''
-    test readout speed:
-      does nothing except requesting random data samples from buffer manager
+  test readout speed:
+  does nothing except requesting random data samples from buffer manager
   '''
   global BM
   if not BM.ACTIVE.value:
     sys.exit(1)
-  mode = 1    # random consumer, eventdata as copy
-
-  evcnt=0
+  # random consumer, eventdata as copy
+  mode = 1
+  evcnt = 0
   while BM.ACTIVE.value:
     e = BM.getEvent(cId, mode=mode)
     if e != None:
       evNr, evtime, evData = e
-      evcnt+=1
+      evcnt += 1
       print('*==* randConsumer: event Nr %i, %i events seen' % (evNr, evcnt))
-# introduce random wait time to mimick processing activity
-    time.sleep(np.random.randint(100,1000)/1000.)
-# - end def randConsumer()
+    # introduce random wait time to mimick processing activity
+    time.sleep(np.random.randint(100, 1000) / 1000.)
   return
 
 
 def subprocConsumer(Q):
   '''
-    test consumer in subprocess using simple protocol
-      reads event data from multiprocessing.Queue()
+  test consumer in subprocess using simple protocol
+  reads event data from multiprocessing.Queue()
   '''
   global BM
   if not BM.ACTIVE.value:
     sys.exit(1)
-
   cnt = 0
   try:
     while True:
       evN, evT, evBuf = Q.get()
       cnt += 1
-      print('*==* mpQ: got event %i'%(evN) )
+      print('*==* mpQ: got event %i' % (evN))
       if cnt <= 3:
         print('     event data \n', evBuf)
       time.sleep(1.)
   except:
-    print('subprocConsumer: signal recieved, ending')
+    print('subprocConsumer() signal recieved, ending')
 
-# some helper functions
-
+# helper functions
 def stop_processes(proclst):
   '''
-  Close all running processes at end of run
+  close all running processes at end of run
   '''
-  # stop all sub-processes
   for p in proclst:
     if p.is_alive():
-      print('    terminating ' + p.name)
+      print('     terminating ' + p.name)
       p.terminate()
       time.sleep(1.)
 
@@ -153,20 +147,23 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
   DAQconfdict = read_yaml_configuration_with_argv('DAQconfig.yaml')
 
+  # configuration file for the picoscope
   if "DeviceFile" in DAQconfdict:
-    DeviceFile = DAQconfdict["DeviceFile"] # configuration file for scope
+    DeviceFile = DAQconfdict["DeviceFile"]
   else:
     print('     no device configuration file - exiting')
     exit(1)
 
+  # buffer manager configuration file
   if "BMfile" in DAQconfdict:
-    BMfile = DAQconfdict["BMfile"] # Buffer Manager configuration file
+    BMfile = DAQconfdict["BMfile"]
   else:
     print('     no BM configuration file - exiting')
     exit(1)
 
+  # configuration file for user analysis
   if "ANAscript" in DAQconfdict:
-    ANAscript = DAQconfdict["ANAscript"] # configuration file for user analysis
+    ANAscript = DAQconfdict["ANAscript"]
   else:
     ANAscript = None
 
@@ -177,21 +174,21 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   if "verbose" in DAQconfdict:
     verbose = DAQconfdict["verbose"]
   else:
-    verbose = 1 # print (detailed) info if >0
+    verbose = 1 # print detailed info to console
 
   # read scope configuration file
-  print('    Device configuration from file ' + DeviceFile)
+  print('     Device configuration from file ' + DeviceFile)
   try:
     PSconfdict = read_yaml_configuration(DeviceFile)
   except:
     print('     failed to read scope configuration file ' + DeviceFile)
     exit(1)
 
-  # read Buffer Manager configuration file
+  # read buffer manager configuration file
   try:
     BMconfdict = read_yaml_configuration(BMfile)
   except:
-    print('     failed to read BM input file ' + BMfile)
+    print('     failed to read buffer manager input file ' + BMfile)
     exit(1)
 
   # initialisation
@@ -205,17 +202,17 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   TSampling = PSconf.TSampling # sampling interval
   NSamples  = PSconf.NSamples  # number of samples
 
-  # configure Buffer Manager  ...
+  # configure buffer manager  ...
   print(' -> initializing BufferMan')
   #BM = BMan.BufferMan(BMconfdict, PSconf)
   BM.BufferMan(BMconfdict, PSconf)
-  # ... tell device what its buffer manager is ...
+  # tell device what its buffer manager is
   PSconf.setBufferManagerPointer(BM)
 
-  # ... and start data acquisition thread.
+  # start data acquisition thread
   if verbose:
     print(" -> starting Buffer Manager Threads")
-  BM.start() # set up buffer manager processes
+  BM.start()
 
   if 'DAQmodules' in BMconfdict:
     modules = modules + BMconfdict["DAQmodules"]
@@ -223,8 +220,8 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   # list of modules (= backgound processes) to start
   if type(modules) != list:
     modules = [modules]
-# modules to be run as sub-processes
-# these use multiprocessing.Queue for data transfer
+  # modules to be run as sub-processes
+  # these use multiprocessing.Queue for data transfer
   thrds = []
   procs = []
 
@@ -232,60 +229,64 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
   if 'mpRMeter' in modules:
     RMcidx, RMmpQ = BM.BMregister_mpQ()
     procs.append(mp.Process(name = 'RMeter', target = mpRMeter,
-                 args=(RMmpQ, 75.,    2500.,   'trigger rate history') ) )
-#                      queue  maxRate interval name
+                 args = (RMmpQ, 75.,    2500.,   'trigger rate history') ) )
+#                        queue  maxRate interval  graph label
 
-  # Voltmeter display
+  # voltage meter display
   if 'mpVMeter' in modules:
     VMcidx, VMmpQ = BM.BMregister_mpQ()
     procs.append(mp.Process(name = 'VMeter', target = mpVMeter,
-                 args=(VMmpQ, PSconf.OscConfDict, 500.,    'effective Voltage') ) )
-#                      queue  configuration       interval name
+                 args = (VMmpQ, PSconf.OscConfDict, 500.,    'effective Voltage') ) )
+#                        queue  configuration       interval  graph label
 
 # ---> put your own code here
 
   if ANAscript:
     try:
-      print('    including user analysis from file ' + ANAscript )
-      exec( open(ANAscript).read() )
+      print('     including user analysis from file ' + ANAscript)
+      exec(open(ANAscript).read())
     except:
       print('     failed to read analysis script ' + ANAscript)
       exit(1)
 
 # <---
 
-  if len(procs)==0 and len(thrds)==0 :
+  if len(procs) == 0 and len(thrds) == 0:
     print ('!!! nothing to do - running BM only')
-# start all background processes
+  # start all background processes
   for prc in procs:
-    prc.deamon = True
+    prc.daemon = True
     prc.start()
     print(' -> starting process ', prc.name, ' PID=', prc.pid)
   time.sleep(1.)
-# start threads
+
+  # start threads
   for thrd in thrds:
     thrd.daemon = True
     thrd.start()
-  time.sleep(1.) # wait for all threads to start, then ...
-# ...start run
+  # wait for all threads to start
+  time.sleep(1.)
+  # then run buffer manager
   BM.run()
 
-# --- LOOP
+  # kbdCntrl is in while loop!
   try:
-# ->> read keyboard (control Buffermanager) <<-
+    # read buffer manager keyboard / gui control
     BM.kbdCntrl()
-    print(sys.argv[0]+': End command received - closing down ...')
+    print(sys.argv[0] + ': End command received - closing down ...')
 
 # ---> user-specific end-of-run code could go here
     print('Data Acquisition ended normally')
 # <---
 
   except KeyboardInterrupt:
-    print(sys.argv[0]+': keyboard interrupt - closing down ...')
-    BM.end() # shut down BufferManager
+    print(sys.argv[0] + ': keyboard interrupt - closing down ...')
+    # shut down BufferManager
+    BM.end()
 
   finally:
-# END: code to clean up
-    PSconf.closeDevice() # close down hardware device
-    stop_processes(procs) # termnate background processes
+    # close down hardware device
+    PSconf.closeDevice()
+    # termnate background processes
+    stop_processes(procs)
     print('finished cleaning up \n')

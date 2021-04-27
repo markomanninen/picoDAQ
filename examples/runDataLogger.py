@@ -114,6 +114,5 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
   finally:
     PSconf.closeDevice() # close down hardware device
-    time.sleep(1.)
     stop_processes(procs) # stop all sub-processes in list
     print('*==* ' + sys.argv[0] + ': normal end \n')
