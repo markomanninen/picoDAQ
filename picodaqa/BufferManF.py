@@ -15,7 +15,7 @@ from __future__ import print_function, division, unicode_literals, absolute_impo
 
 import numpy as np, sys, time, threading
 from threading import Thread
-from multiprocessing import Process
+from multiprocessing import Value, Array, Process
 from multiprocessing.sharedctypes import RawValue, RawArray
 
 from .mpBufManCntrl import mpBufManCntrl
@@ -46,18 +46,18 @@ trigStamp  = None
 BMlock     = None
 
 # global variables for producer statistics
-ibufr    = RawValue('i', -1) # read index, synchronization with producer
-Ntrig    = RawValue('i', 0)  # count number of readings
-Ttrig    = RawValue('f', 0.) # time of last event
-Tlife    = RawValue('f', 0.) # DAQ lifetime
-readrate = RawValue('f', 0.) # current rate
-lifefrac = RawValue('f', 0.) # current life-time
-BMT0     = RawValue('d', 0.) # time of run-start
+ibufr    = Value('i', -1) # read index, synchronization with producer
+Ntrig    = Value('i', 0)  # count number of readings
+Ttrig    = Value('f', 0.) # time of last event
+Tlife    = Value('f', 0.) # DAQ lifetime
+readrate = Value('f', 0.) # current rate
+lifefrac = Value('f', 0.) # current life-time
+BMT0     = Value('d', 0.) # time of run-start
 
-STARTED = RawValue('b', 0)
-ACTIVE  = RawValue('b', 0)
-RUNNING = RawValue('b', 0)
-STOPPED = RawValue('b', 0)
+STARTED = None
+ACTIVE  = Value('b', 0)
+RUNNING = Value('b', 0)
+STOPPED = None
 
 # set up variables for buffer manager status and accounting
 tPause  = 0. # time when last paused
@@ -230,6 +230,7 @@ def manageDataBuffer():
   t0 = time.time()
   n0 = 0
   n = 0
+  
   while ACTIVE.value:
     # wait for pointer to data in producer queue
     while prod_Que.empty():
@@ -293,6 +294,8 @@ def manageDataBuffer():
     if evNr != n:
       prlog("!!! BufferManager.manageDataBuffer() error: ncnt != Ntrig: %i, %i" % (n, evNr))
 
+  return prlog('*==* BufferManager.manageDataBuffer() ended')
+
 
 def BMregister():
   '''
@@ -341,6 +344,9 @@ def getEvent(client_index, mode = 1):
   returns: event data
   '''
   global request_Ques, consumer_Ques, ACTIVE, trigStamp, timeStamp, BMbuf
+
+  if not len(request_Ques):
+    return None
 
   request_Ques[client_index].put(mode)
   cQ = consumer_Ques[client_index]
@@ -393,7 +399,7 @@ def start():
   prlog('*==* BufferManager.start() acquisition threads')
 
   ACTIVE.value = True
-  STARTED.value = False
+  STARTED = False
 
   add_thread('acquireData', acquireData)
   # start manageDataBuffer as the last sub-process in run(),
@@ -424,7 +430,7 @@ def run():
   ''' start run - this must not be started before all clients have registered '''
   global STARTED, start_manageDataBuffer, flog, LogFile, verbose, BMT0, procs, RUNNING
   # start manageDataBuffer process and initialize run
-  if STARTED.value:
+  if STARTED:
     return prlog('*==* run already started - do nothing')
 
   tstart = time.time()
@@ -441,12 +447,13 @@ def run():
   # delayed start of manageDataBuffer
   if start_manageDataBuffer:
     procs.append(Process(name = 'manageDataBuffer', target = manageDataBuffer))
+    procs[-1].daemon = True
     procs[-1].start()
     start_manageDataBuffer = False
     if verbose:
       print('     BufferManager.run() process ', procs[-1].name, ' PID=', procs[-1].pid)
 
-  STARTED.value = True
+  STARTED = True
   RUNNING.value = True
 
 
@@ -455,7 +462,7 @@ def pause():
   global tPause, RUNNING, STOPPED, readrate
   if not RUNNING.value:
     return print('*==* BufferManager.pause() command recieved, but not running')
-  if STOPPED.value:
+  if STOPPED:
     return print('*==* BufferManager.pause() from stopped state not possible')
 
   prlog('*==* BufferManager.pause()')
@@ -471,7 +478,7 @@ def resume():
 
   if RUNNING.value:
     return print('*==* BufferManager.resume() command recieved, but already running')
-  if STOPPED.value:
+  if STOPPED:
     return print('*==* BufferManager.resume() from Stopped state not possible')
 
   prlog('*==* BufferManager.resume()')
@@ -581,7 +588,7 @@ def getBMInfoQue():
 def reportStatus(Q):
   ''' report buffer manager status to a multiprocessing queue '''
   global STOPPED, prod_Que, BMIinterval
-  while not STOPPED.value:
+  while not STOPPED:
     if Q is not None and Q.empty() and prod_Que is not None:
       Q.put(getStatus())
     # onvert from milliseconds to seconds
@@ -640,7 +647,7 @@ def stop():
 
   tPause = 0.
   tStop = time.time()
-  STOPPED.value = True
+  STOPPED = True
   # allow all events to propagate
   time.sleep(1.)
 
