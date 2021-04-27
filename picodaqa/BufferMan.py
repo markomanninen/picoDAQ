@@ -10,7 +10,7 @@ from __future__ import absolute_import
 # - class BufferMan
 import numpy as np, sys, time, threading
 
-from multiprocessing import Process, Array
+from multiprocessing import Process
 from multiprocessing.sharedctypes import RawValue, RawArray
 
 from .mpBufManCntrl import *
