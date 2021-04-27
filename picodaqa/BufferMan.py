@@ -10,11 +10,12 @@ from __future__ import absolute_import
 # - class BufferMan
 import numpy as np, sys, time, threading
 
-from multiprocessing import Queue, Process, Array
+from multiprocessing import Process, Array
 from multiprocessing.sharedctypes import RawValue, RawArray
 
 from .mpBufManCntrl import *
 from .mpOsci import * 
+from .mpQueue import Queue
 
 class BufferMan(object):
   '''
@@ -303,7 +304,7 @@ class BufferMan(object):
   
     if self.verbose:
       self.prlog("*==* BMregister_mpQ: new subprocess client id=%i" % cid)
-    return cid, self.mpQues[-1]
+    return self.mpQues[-1]
 
 # -- encapsulates data access for obligatory and random clients  
   def getEvent(self, client_index, mode=1):
@@ -376,7 +377,7 @@ class BufferMan(object):
 
   # waveform display 
     if 'mpOsci' in self.BMmodules: 
-      OScidx, OSmpQ = self.BMregister_mpQ()
+      OSmpQ = self.BMregister_mpQ()
       self.procs.append(Process(name='Osci', target = mpOsci, 
         args=(OSmpQ, self.DevConf.OscConfDict, 100., 'event rate') ) )
 #                                            interval

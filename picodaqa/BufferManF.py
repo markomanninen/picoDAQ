@@ -15,102 +15,12 @@ from __future__ import print_function, division, unicode_literals, absolute_impo
 
 import numpy as np, sys, time, threading
 from threading import Thread
-from multiprocessing.queues import Queue as QueueX
-from multiprocessing import Process, Array, Value, get_context
+from multiprocessing import Process
 from multiprocessing.sharedctypes import RawValue, RawArray
 
-from .mpBufManCntrl import *
-from .mpOsci import *
-
-class SharedCounter(object):
-    """
-    A synchronized shared counter
-
-    The locking done by multiprocessing.Value ensures that only a single
-    process or thread may read or write the in-memory ctypes object. However,
-    in order to do n += 1, Python performs a read followed by a write, so a
-    second process may read the old value before the new one is written by the
-    first process. The solution is to use a multiprocessing.Lock to guarantee
-    the atomicity of the modifications to Value.
-    This class comes almost entirely from Eli Bendersky's blog:
-    http://eli.thegreenplace.net/2012/01/04/shared-counter-with-pythons-multiprocessing/
-    """
-
-    def __init__(self, n=0):
-        self.count = Value('i', n)
-
-    def increment(self, n=1):
-        """ Increment the counter by n (default = 1) """
-        with self.count.get_lock():
-            self.count.value += n
-
-    @property
-    def value(self):
-        """ Return the value of the counter """
-        return self.count.value
-
-
-class Queue(QueueX):
-    """
-    A portable implementation of multiprocessing.Queue
-
-    Because of multithreading / multiprocessing semantics, Queue.qsize() may
-    raise the NotImplementedError exception on Unix platforms like Mac OS X
-    where sem_getvalue() is not implemented. This subclass addresses this
-    problem by using a synchronized shared counter (initialized to zero) and
-    increasing / decreasing its value every time the put() and get() methods
-    are called, respectively. This not only prevents NotImplementedError from
-    being raised, but also allows us to implement a reliable version of both
-    qsize() and empty().
-
-    Note the implementation of __getstate__ and __setstate__ which help to
-    serialize Queue when it is passed between processes. If these functions
-    are not defined, MyQueue cannot be serialized, which will lead to the error
-    of "AttributeError: 'Queue' object has no attribute 'size'".
-    See the answer provided here: https://stackoverflow.com/a/65513291/9723036
-
-    For documentation of using __getstate__ and __setstate__ to serialize objects,
-    refer to here: https://docs.python.org/3/library/pickle.html#pickling-class-instances
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, ctx=get_context())
-        self.size = SharedCounter(0)
-
-    def __getstate__(self):
-        """
-        Help to make MyQueue instance serializable
-
-        Note that we record the parent class state, which is the state of the
-        actual queue, and the size of the queue, which is the state of Queue.
-        self.size is a SharedCounter instance. It is itself serializable.
-        """
-        return {
-            'parent_state': super().__getstate__(),
-            'size': self.size
-        }
-
-    def __setstate__(self, state):
-        super().__setstate__(state['parent_state'])
-        self.size = state['size']
-
-    def put(self, *args, **kwargs):
-        super().put(*args, **kwargs)
-        self.size.increment(1)
-
-    def get(self, *args, **kwargs):
-        item = super().get(*args, **kwargs)
-        self.size.increment(-1)
-        return item
-
-    def qsize(self):
-        """ Reliable implementation of multiprocessing.Queue.qsize() """
-        return self.size.value
-
-    def empty(self):
-        """ Reliable implementation of multiprocessing.Queue.empty() """
-        return not self.qsize()
-
+from .mpBufManCntrl import mpBufManCntrl
+from .mpOsci import mpOsci
+from .mpQueue import Queue
 
 verbose   = 1    # print detailed info if 1, 0 to print less info
 
@@ -169,6 +79,7 @@ mpQues    = []
 logQ      = None
 prod_Que  = None
 kbdtxt    = ''
+KBQueue   = None # keyboard queue
 
 BMIinterval = 1000. # update interval in ms
 maxBMrate   = 450.  # maximum buffer manager rate
@@ -223,6 +134,7 @@ def BufferMan(BMdict, DevConfArg):
   CtrigStamp = RawArray('i', NBuffers)
   # map to numpy arrays
   BMbuf = np.frombuffer(CBMbuf, 'f').reshape(NBuffers, NChannels, NSamples)
+  
   timeStamp = np.frombuffer(CtimeStamp, 'f')
   trigStamp = np.frombuffer(CtrigStamp, 'f')
   # queues ( multiprocessing Queues for communication with sub-processes)
@@ -470,11 +382,12 @@ def add_thread(name, target, args = ()):
   thrd.daemon = True
   thrd.start()
   thrds.append(thrd)
+  return thrd
 
 
 def start():
   ''' set-up buffer manager processes '''
-  global ACTIVE, STARTED, start_manageDataBuffer
+  global ACTIVE, STARTED, start_manageDataBuffer, KBQueue
   global logQ, procs, BMmodules, DevConf, BMIinterval, maxBMrate
 
   prlog('*==* BufferManager.start() acquisition threads')
@@ -501,7 +414,8 @@ def start():
     add_process(
       'mpOsci',
       mpOsci,
-      (OSmpQ, DevConf.OscConfDict, 100., 'event rate'))
+      (OSmpQ, DevConf.OscConfDict, 500., 'event rate'))
+
   # start background processes
   start_processes()
 
@@ -538,7 +452,7 @@ def run():
 
 def pause():
   ''' pause data acquisition - RUNNING flag evaluated by raw data producer '''
-  global tPause, RUNNING, STOPPED, verbose, readrate
+  global tPause, RUNNING, STOPPED, readrate
   if not RUNNING.value:
     return print('*==* BufferManager.pause() command recieved, but not running')
   if STOPPED.value:
@@ -553,7 +467,7 @@ def pause():
 
 def resume():
   ''' resume data acquisition '''
-  global RUNNING, STOPPED, verbose, dTPause, tPause
+  global RUNNING, STOPPED, dTPause, tPause
 
   if RUNNING.value:
     return print('*==* BufferManager.resume() command recieved, but already running')
@@ -644,6 +558,7 @@ def getStatus():
     t = tPause
   else:
     t = time.time()
+
   return (RUNNING.value, t - BMT0.value - dTPause,
           Ntrig.value, Ttrig.value, Tlife.value,
           readrate.value, lifefrac.value, bL)
