@@ -4,6 +4,13 @@ import sys, time
 
 # helper function for example runners
 
+# 1st, remove pyhton 2 vs. python 3 incompatibility for keyboard input
+if sys.version_info[:2] <= (2,7):
+  get_input = raw_input
+else:
+  get_input = input
+
+
 def stop_processes(proclst):
   '''
   Close all running processes at end of run
@@ -19,11 +26,6 @@ def threaded_keyboard_input(cmdQ):
   '''
   Read keyboard input, run as backround-thread to aviod blocking
   '''
-  # 1st, remove pyhton 2 vs. python 3 incompatibility for keyboard input
-  if sys.version_info[:2] <= (2,7):
-    get_input = raw_input
-  else:
-    get_input = input
   # set up callback function to use input getter and command queue
   # from runner scripts with the given info text
   def callback(info_text):
