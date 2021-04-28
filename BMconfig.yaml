@@ -1,6 +1,6 @@
-# configuration of picoDAQ buffer manager 
+# configuration of picoDAQ buffer manager
 
-NBuffers: 16                   # number of buffers to store raw waveforms
+NBuffers: 200                   # number of buffers to store raw waveforms
 
 BMmodules: [mpBufInfo, mpOsci] # buffer manager modules to start
 
