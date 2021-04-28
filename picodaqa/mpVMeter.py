@@ -34,7 +34,7 @@ def mpVMeter(Q, conf, WaitTime=500., name='effective Voltage'):
     try:
       while True:
         evNr, evTime, evData = Q.get()
-        print('*==* yieldEvt_fromQ: received event %i' % evNr)
+        #print('*==* yieldEvt_fromQ: received event %i' % evNr)
         cnt += 1
         evt = (cnt, evNr, evTime, evData)
         yield evt

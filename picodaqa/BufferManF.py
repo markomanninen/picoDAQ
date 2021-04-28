@@ -134,7 +134,7 @@ def BufferMan(BMdict, DevConfArg):
   CtrigStamp = RawArray('i', NBuffers)
   # map to numpy arrays
   BMbuf = np.frombuffer(CBMbuf, 'f').reshape(NBuffers, NChannels, NSamples)
-  
+
   timeStamp = np.frombuffer(CtimeStamp, 'f')
   trigStamp = np.frombuffer(CtrigStamp, 'f')
   # queues ( multiprocessing Queues for communication with sub-processes)
@@ -230,7 +230,7 @@ def manageDataBuffer():
   t0 = time.time()
   n0 = 0
   n = 0
-  
+
   while ACTIVE.value:
     # wait for pointer to data in producer queue
     while prod_Que.empty():
@@ -290,7 +290,7 @@ def manageDataBuffer():
     n += 1
     if time.time() - t0 >= logTime:
       t0 = time.time()
-    prlog('evt %i:  rate: %.3gHz   life: %.2f%%' % (n, readrate.value, lifefrac.value))
+    #prlog('evt %i:  rate: %.3gHz   life: %.2f%%' % (n, readrate.value, lifefrac.value))
     if evNr != n:
       prlog("!!! BufferManager.manageDataBuffer() error: ncnt != Ntrig: %i, %i" % (n, evNr))
 
@@ -345,23 +345,20 @@ def getEvent(client_index, mode = 1):
   '''
   global request_Ques, consumer_Ques, ACTIVE, trigStamp, timeStamp, BMbuf
 
-  if not len(request_Ques):
-    return None
-
   request_Ques[client_index].put(mode)
   cQ = consumer_Ques[client_index]
 
   while cQ.empty():
     if not ACTIVE.value:
-      return
+      return None
     time.sleep(0.0005)
   ibr = cQ.get()
-  prlog('*==* getEvent: received event %i' % trigStamp[ibr])
   # received copy of the event data
   if mode != 0:
     return ibr
   # received pointer to event buffer
   else:
+    #prlog('*==* getEvent: received event %i' % trigStamp[ibr])
     evNr = trigStamp[ibr]
     evTime = timeStamp[ibr]
     evData = BMbuf[ibr]

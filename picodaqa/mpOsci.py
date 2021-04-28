@@ -24,26 +24,26 @@ def mpOsci(Q, conf, interval = 50., name='event rate'):
   '''Oscilloscpe display of data passed via multiprocessing.Queue
     Args:
       conf: picoConfig object
-      Q:    multiprocessing.Queue()   
+      Q:    multiprocessing.Queue()
   '''
 
   # Generator to provide data to animation
   def yieldEvt_fromQ():
-# random consumer of Buffer Manager, receives an event copy 
+# random consumer of Buffer Manager, receives an event copy
    # via a Queue from package mutiprocessing
-   
+
     cnt = 0
     try:
       while True:
         evNr, evTime, evData = Q.get()
-        print('*==* yieldEvt_fromQ: received event %i' % evNr)
+        #print('*==* yieldEvt_fromQ: received event %i' % evNr)
         cnt+=1
         evt = (cnt, evNr, evTime, evData)
         yield evt
     except:
       print('*==* yieldEvt_fromQ: termination signal received')
-  
-# ------- executable part -------- 
+
+# ------- executable part --------
   print(' -> mpOsci starting')
 
   try:
@@ -62,13 +62,13 @@ def mpOsci(Q, conf, interval = 50., name='event rate'):
     button.pack(side=Tk.BOTTOM)
 
 # set up matplotlib animation
-    osciAnim = anim.FuncAnimation(figOs, Osci, yieldEvt_fromQ, 
+    osciAnim = anim.FuncAnimation(figOs, Osci, yieldEvt_fromQ,
                   init_func=Osci.init, interval=interval, blit=True,
                   fargs=None, repeat=True, save_count=None)
-                       # save_count=None is a (temporary) work-around 
+                       # save_count=None is a (temporary) work-around
                        #     to fix memory leak in animate
     Tk.mainloop()
-   
+
   except:
     print('*==* mpOsci: termination signal recieved')
   sys.exit()

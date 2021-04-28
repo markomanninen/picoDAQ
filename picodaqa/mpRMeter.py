@@ -38,7 +38,7 @@ def mpRMeter(Q, maxRate = 10., interval = 2500., name = 'rate history'):
         e = Q.get()
         evNr = e[0]
         evTime = e[1]
-        print('*==* yieldEvt_fromQ: received event %i' % evNr)
+        #print('*==* yieldEvt_fromQ: received event %i' % evNr)
         cnt += 1
         evt = (cnt, evNr, evTime)
         yield evt
