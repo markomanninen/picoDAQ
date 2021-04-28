@@ -5,17 +5,18 @@ PSmodel: 2000a
 #picoChannels: [A, B]
 #ChanRanges:   [0.03, 0.35]
 picoChannels: [A, B, C, D]
-ChanRanges:   [0.03, 0.35, 0.35, 0.35]
-sampleTime:   1.0E-05
-Nsamples:     200
+ChanModes:    [AC, AC, AC, AC]
+ChanRanges:   [0.03, 0.03, 0.03, 0.03]
+sampleTime:   1.0E-04
+Nsamples:     500
 
 # trigger
 trgActive: true  # true to activate
 trgChan:   A
-trgThr:    0.1
-pretrig:   0.05
+trgThr:    0.015
+pretrig:   0.01
 trgTyp:    Rising
 trgTO:     1000  # time-out
 
 # signal generator
-frqSG: 100.E+3 # 0. to disable
+frqSG: 1.0E+02 # 0. to disable, 1.0E-02 lowest
