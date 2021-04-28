@@ -15,9 +15,9 @@ class animHists(object):
   '''
 
   def __init__(self, Hdescr, name='Histograms'):
-    ''' 
+    '''
       Args:
-        list of histogram descriptors, 
+        list of histogram descriptors,
         where each descriptor is a list itself: [min, max, nbins, ymax, name, type]
         min: minimum value
         max: maximum value
@@ -27,11 +27,11 @@ class animHists(object):
         type: 0 linear, 1 for logarithmic y scale
         name forfigure window
     '''
-  
+
     self.nHist = len(Hdescr)
     self.entries = np.zeros(self.nHist)
     self.frqs = []
-    
+
   # histrogram properties
     self.mins = []
     self.maxs = []
@@ -61,7 +61,7 @@ class animHists(object):
     if ncols * nrows < self.nHist: ncols +=1
     self.fig, axarray = plt.subplots(nrows=nrows, ncols=ncols,
                                           figsize=(3.*ncols, 2.*nrows) )
-    self.fig.canvas.set_window_title(name)
+    #self.fig.canvas.set_window_title(name)
     self.fig.subplots_adjust(left=0.25/ncols, bottom=0.25/nrows, right=0.975, top=0.95,
                              wspace=0.35, hspace=0.35)
 # sort axes in linear array
@@ -87,27 +87,27 @@ class animHists(object):
 # guess an appropriate y-range for normalized histogram
       if self.types[ih]:            # log plot
         self.axes[ih].set_yscale('log')
-        ymx=self.ymxs[ih]/self.nbins[ih] 
-        self.axes[ih].set_ylim(1E-3 * ymx, ymx) 
+        ymx=self.ymxs[ih]/self.nbins[ih]
+        self.axes[ih].set_ylim(1E-3 * ymx, ymx)
         self.frqs.append(1E-4*ymx*np.ones(self.nbins[ih]) )
       else:                         # linear y scale
         self.axes[ih].set_ylim(0., self.ymxs[ih]/self.nbins[ih])
         self.frqs.append(np.zeros(self.nbins[ih]))
-    
+
   def init(self):
     self.rects = []
     self.animtxts = []
     for ih in range(self.nHist):
     # plot an empty histogram
-      self.rects.append(self.axes[ih].bar( self.bcents[ih], self.frqs[ih], 
-           align='center', width=self.widths[ih], facecolor='b', alpha=0.7) )       
+      self.rects.append(self.axes[ih].bar( self.bcents[ih], self.frqs[ih],
+           align='center', width=self.widths[ih], facecolor='b', alpha=0.7) )
     # emty text
       self.animtxts.append(self.axes[ih].text(0.5, 0.925 , ' ',
               transform=self.axes[ih].transAxes,
               size='small', color='darkred') )
 
     grobjs = tuple(self.animtxts) \
-              + tuple(itertools.chain.from_iterable(self.rects) )  
+              + tuple(itertools.chain.from_iterable(self.rects) )
     return grobjs # return tuple of graphics objects
 
   def __call__(self, vals):
@@ -128,4 +128,4 @@ class animHists(object):
         self.animtxts[ih].set_text('Entries: %i'%(self.entries[ih]) )
 
     return tuple(self.animtxts)  \
-        + tuple(itertools.chain.from_iterable(self.rects) ) 
+        + tuple(itertools.chain.from_iterable(self.rects) )
