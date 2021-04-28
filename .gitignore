@@ -9,6 +9,7 @@
 *.egg-info
 *.eggs
 *.sum
+*.dat
 
 ##########
 # Images #
