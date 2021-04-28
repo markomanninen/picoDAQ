@@ -42,8 +42,7 @@ import multiprocessing as mp
 
 # import relevant pieces from picodaqa
 import picodaqa.picoConfig
-#import picodaqa.BufferMan as BMan
-import picodaqa.BufferManF as BM
+import picodaqa.BufferMan as BMan
 
 # animated displays running as background processes/threads
 from picodaqa.mpOsci import mpOsci
@@ -59,76 +58,6 @@ from picodaqa.read_config import read_yaml_configuration,\
 # --------------------------------------------------------------
 #     scope settings defined in .yaml-File, see picoConfig
 # --------------------------------------------------------------
-
-def obligConsumer(cId):
-  '''
-    test readout speed: do nothing, just request data from buffer manager
-      - an example of an obligatory consumer, sees all data
-        (i.e. data acquisition is halted when no data is requested)
-
-      Args:
-        BM:   Buffer Manager instance
-        cId:  Buffer Manager client id (from main process)
-
-  '''
-  global BM
-  if not BM.ACTIVE.value:
-    sys.exit(1)
-  # obligatory consumer, data in evdata transferred as pointer
-  mode = 0
-  evcnt = 0
-  while BM.ACTIVE.value:
-    e = BM.getEvent(cId, mode = mode)
-    if e != None:
-      evNr, evtime, evData = e
-      evcnt += 1
-      print('*==* obligConsumer: event Nr %i, %i events seen' % (evNr, evcnt))
-
-    # introduce random wait time to mimick processing activity
-    time.sleep(-0.25 * np.log(np.random.uniform(0., 1.)))
-  return
-
-def randConsumer(cId):
-  '''
-  test readout speed:
-  does nothing except requesting random data samples from buffer manager
-  '''
-  global BM
-  if not BM.ACTIVE.value:
-    sys.exit(1)
-  # random consumer, eventdata as copy
-  mode = 1
-  evcnt = 0
-  while BM.ACTIVE.value:
-    e = BM.getEvent(cId, mode=mode)
-    if e != None:
-      evNr, evtime, evData = e
-      evcnt += 1
-      print('*==* randConsumer: event Nr %i, %i events seen' % (evNr, evcnt))
-    # introduce random wait time to mimick processing activity
-    time.sleep(np.random.randint(100, 1000) / 1000.)
-  return
-
-
-def subprocConsumer(Q):
-  '''
-  test consumer in subprocess using simple protocol
-  reads event data from multiprocessing.Queue()
-  '''
-  global BM
-  if not BM.ACTIVE.value:
-    sys.exit(1)
-  cnt = 0
-  try:
-    while True:
-      evN, evT, evBuf = Q.get()
-      cnt += 1
-      print('*==* mpQ: got event %i' % (evN))
-      if cnt <= 3:
-        print('     event data \n', evBuf)
-      time.sleep(1.)
-  except:
-    print('subprocConsumer() signal recieved, ending')
 
 # helper functions
 def stop_processes(proclst):
@@ -204,8 +133,7 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
   # configure buffer manager  ...
   print(' -> initializing BufferMan')
-  #BM = BMan.BufferMan(BMconfdict, PSconf)
-  BM.BufferMan(BMconfdict, PSconf)
+  BM = BMan.BufferMan(BMconfdict, PSconf)
   # tell device what its buffer manager is
   PSconf.setBufferManagerPointer(BM)
 
@@ -227,16 +155,16 @@ if __name__ == "__main__": # - - - - - - - - - - - - - - - - - - - - - -
 
   # rate display
   if 'mpRMeter' in modules:
-    RMcidx, RMmpQ = BM.BMregister_mpQ()
+    RMmpQ = BM.BMregister_mpQ()
     procs.append(mp.Process(name = 'RMeter', target = mpRMeter,
-                 args = (RMmpQ, 75.,    2500.,   'trigger rate history') ) )
+                 args = (RMmpQ, 75.,    1000.,   'trigger rate history') ) )
 #                        queue  maxRate interval  graph label
 
   # voltage meter display
   if 'mpVMeter' in modules:
-    VMcidx, VMmpQ = BM.BMregister_mpQ()
+    VMmpQ = BM.BMregister_mpQ()
     procs.append(mp.Process(name = 'VMeter', target = mpVMeter,
-                 args = (VMmpQ, PSconf.OscConfDict, 500.,    'effective Voltage') ) )
+                 args = (VMmpQ, PSconf.OscConfDict, 1000.,    'effective Voltage') ) )
 #                        queue  configuration       interval  graph label
 
 # ---> put your own code here
