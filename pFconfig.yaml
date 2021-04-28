@@ -1,0 +1,31 @@
+# Configuration file for pulseFilter
+
+#logFile: pFilt     # store all pulses, put Null if no output wanted
+logFile: Null      # store all pulses, put Null if no output wanted
+logFile2: dpFilt   # store double-pulses only, put Null if not wanted
+rawFile:  rawDP    # store raw wave forms, put Null if not wanted
+pictFile: pictDP   # save pictures of double-pulse waveforms
+
+# pulse parameters
+#         ______
+#        /      \  
+#     _ /_ _ _ _ \_ _ _ _ _ _ _   
+#                 \__________/
+#      r    on  f f2   off  r2 
+#                 f2 - r2 for bi-polar only
+
+pulseShape:
+ - taur   : 20.E-9
+   tauon  : 12.E-9 
+   tauf   : 128.E-9 
+   tauf2  : 0. 
+   tauoff : 0. 
+   taur2  : 0.
+   pheight: -0.045
+   mode   : 0             # 0:uni-polar  1: bipolar 
+
+
+modules: [RMeter, Hists, Display]
+#modules: [RMeter, Display]
+
+## not yet used! analysisLevel: 2   # 0: trg valid, 1: coinc. 2: double pulses
